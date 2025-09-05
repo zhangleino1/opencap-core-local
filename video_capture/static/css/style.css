@@ -1,0 +1,115 @@
+/* Additional custom styles for OpenCap Recording Tool */
+
+.main-title {
+    color: #2c3e50;
+    margin-bottom: 30px;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+}
+
+.recording-controls {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    border: 1px solid #e0e6ed;
+}
+
+.camera-card {
+    transition: all 0.3s ease;
+}
+
+.camera-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.log-container {
+    background: #1e1e1e;
+    color: #fff;
+}
+
+.log-entry {
+    border-bottom: 1px solid #333;
+    padding: 2px 0;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 5px;
+}
+
+.status-running .status-indicator {
+    background-color: #28a745;
+    box-shadow: 0 0 5px #28a745;
+}
+
+.status-stopped .status-indicator {
+    background-color: #6c757d;
+}
+
+.status-error .status-indicator {
+    background-color: #dc3545;
+    box-shadow: 0 0 5px #dc3545;
+}
+
+.btn-recording {
+    position: relative;
+    overflow: hidden;
+}
+
+.btn-recording:after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 5px;
+    height: 5px;
+    background: rgba(255,255,255,.5);
+    opacity: 0;
+    border-radius: 100%;
+    transform: scale(1, 1) translate(-50%);
+    transform-origin: 50% 50%;
+}
+
+.btn-recording:focus:not(:active)::after {
+    animation: ripple 1s ease-out;
+}
+
+@keyframes ripple {
+    0% {
+        transform: scale(0, 0);
+        opacity: 1;
+    }
+    20% {
+        transform: scale(25, 25);
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        transform: scale(40, 40);
+    }
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .recording-controls {
+        text-align: center;
+    }
+    
+    .recording-controls .col-md-4 {
+        margin-bottom: 15px;
+    }
+    
+    .duration-display {
+        font-size: 18px;
+    }
+    
+    .btn-lg {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+}
