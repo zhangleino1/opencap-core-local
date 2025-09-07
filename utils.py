@@ -23,7 +23,13 @@ from utilsAuth import getToken
 from utilsAPI import getAPIURL
 
 API_URL = getAPIURL()
-API_TOKEN = getToken()
+
+def get_api_token():
+    """Get API token when needed, not at import time."""
+    token = getToken()
+    if token is None:
+        raise RuntimeError("API token is not available in local mode. This function should not be called.")
+    return token
 
 #%% Rest of utils
 
@@ -73,7 +79,7 @@ def getOpenPoseDirectory(isDocker=False):
     elif computername == "DESKTOP-NJMGEBG":
         openPoseDirectory = "C:/openpose/"
     else:
-        openPoseDirectory = "C:/openpose/"
+        openPoseDirectory = "E:/guge/openpose-1.7.0-binaries-win64-gpu-python3.7"
     return openPoseDirectory
 
 def getMMposeDirectory(isDocker=False):
@@ -94,8 +100,8 @@ def loadCameraParameters(filename):
     return cameraParams
 
 def importMetadata(filePath):
-    myYamlFile = open(filePath)
-    parsedYamlFile = yaml.load(myYamlFile, Loader=yaml.FullLoader)
+    with open(filePath, 'r', encoding='utf-8') as myYamlFile:
+        parsedYamlFile = yaml.load(myYamlFile, Loader=yaml.FullLoader)
     
     return parsedYamlFile
 
@@ -183,9 +189,8 @@ def postCalibrationOptions(session_path,session_id,overwrite=False):
    
     if trial['meta'] is None or overwrite == True:
         calibOptionsJsonPath = os.path.join(session_path,'Videos','calibOptionSelections.json')
-        f = open(calibOptionsJsonPath)
-        calibOptionsJson = json.load(f)
-        f.close()
+        with open(calibOptionsJsonPath, 'r', encoding='utf-8') as f:
+            calibOptionsJson = json.load(f)
         data = {
                 "meta":json.dumps({'calibration':calibOptionsJson})
             }
@@ -260,7 +265,7 @@ def downloadVideosFromServer(session_id,trial_id, isDocker=True,
             session_desc['iphoneModel'] = {'Cam' + str(i) : phoneModel[i] for i in range(len(phoneModel))}
         
             # Save metadata.
-            with open(sessionYamlPath, 'w') as file:
+            with open(sessionYamlPath, 'w', encoding='utf-8') as file:
                 yaml.dump(session_desc, file)
                 
     return trial_name
@@ -732,7 +737,7 @@ def changeSessionMetadata(session_ids,newMetaDict):
                     print("Could not find {} in existing yaml, adding it.".format(newMeta))               
                     metaYaml[newMeta] = newMetaDict[newMeta]
                             
-            with open(metaPath, 'w') as file:
+            with open(metaPath, 'w', encoding='utf-8') as file:
                 yaml.dump(metaYaml, file)
                 
             deleteResult(trial_id, tag='session_metadata')
@@ -1122,7 +1127,7 @@ def numpy2storage(labels, data, storage_file):
     assert data.shape[1] == len(labels), "# labels doesn't match columns"
     assert labels[0] == "time"
     
-    f = open(storage_file, 'w')
+    f = open(storage_file, 'w', encoding='utf-8')
     f.write('name %s\n' %storage_file)
     f.write('datacolumns %d\n' %data.shape[1])
     f.write('datarows %d\n' %data.shape[0])
@@ -1256,7 +1261,7 @@ def storage2numpy(storage_file, excess_header_entries=0):
         >>> data['ground_force_vy']
     """
     # What's the line number of the line containing 'endheader'?
-    f = open(storage_file, 'r')
+    f = open(storage_file, 'r', encoding='utf-8')
 
     header_line = False
     for i, line in enumerate(f):
@@ -1592,7 +1597,7 @@ def writeToJsonLog(path, new_dict, max_entries=1000, indent=2):
         os.makedirs(dir_name)
 
     if os.path.exists(path):
-        with open(path, 'r') as f:
+        with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
     else:
         data = []
@@ -1602,7 +1607,7 @@ def writeToJsonLog(path, new_dict, max_entries=1000, indent=2):
     while len(data) > max_entries:
         data.pop(0)
 
-    with open(path, 'w') as f:
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=indent)
 
 def writeToErrorLog(path, session_id, trial_id, error, stack, max_entries=1000):

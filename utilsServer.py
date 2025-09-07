@@ -34,7 +34,13 @@ from utilsAPI import getAPIURL
 
 
 API_URL = getAPIURL()
-API_TOKEN = getToken()
+
+def get_api_token():
+    """Get API token when needed, not at import time."""
+    token = getToken()
+    if token is None:
+        raise RuntimeError("API token is not available in local mode. This function should not be called.")
+    return token
 
 def processTrial(session_id, trial_id, trial_type = 'dynamic',
                  imageUpsampleFactor = 4, poseDetector = 'OpenPose',
@@ -74,7 +80,7 @@ def processTrial(session_id, trial_id, trial_type = 'dynamic',
             _ = makeRequestWithRetry('PATCH',
                                      trial_url,
                                      data={"meta": json.dumps(error_msg)},
-                                     headers = {"Authorization": "Token {}".format(API_TOKEN)}) 
+                                     headers = {"Authorization": "Token {}".format(get_api_token())}) 
             raise Exception('Calibration failed', e.args[0], e.args[1])
         
         if not hasWritePermissions:
@@ -113,7 +119,7 @@ def processTrial(session_id, trial_id, trial_type = 'dynamic',
             sessionMetadata = importMetadata(metadata_path)
             poseDetector = sessionMetadata['posemodel']
             file_dir = os.path.dirname(os.path.abspath(__file__))
-            with open(os.path.join(file_dir,'defaultOpenCapSettings.json')) as f:
+            with open(os.path.join(file_dir,'defaultOpenCapSettings.json'), encoding='utf-8') as f:
                 defaultOpenCapSettings = json.load(f)
             if poseDetector.lower() == 'openpose':
                 resolutionPoseDetection = defaultOpenCapSettings['openpose']
@@ -152,7 +158,7 @@ def processTrial(session_id, trial_id, trial_type = 'dynamic',
             _ = makeRequestWithRetry('PATCH',
                                      trial_url,
                                      data={"meta": json.dumps(error_msg)},
-                                     headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                     headers = {"Authorization": "Token {}".format(get_api_token())})
             raise Exception('Static trial failed', e.args[0], e.args[1])
         
         if not hasWritePermissions:
@@ -207,7 +213,7 @@ def processTrial(session_id, trial_id, trial_type = 'dynamic',
             sessionMetadata = importMetadata(metadata_path)
             poseDetector = sessionMetadata['posemodel']
             file_dir = os.path.dirname(os.path.abspath(__file__))
-            with open(os.path.join(file_dir,'defaultOpenCapSettings.json')) as f:
+            with open(os.path.join(file_dir,'defaultOpenCapSettings.json'), encoding='utf-8') as f:
                 defaultOpenCapSettings = json.load(f)
             if poseDetector.lower() == 'openpose':
                 resolutionPoseDetection = defaultOpenCapSettings['openpose']
@@ -244,7 +250,7 @@ def processTrial(session_id, trial_id, trial_type = 'dynamic',
             _ = makeRequestWithRetry('PATCH',
                                      trial_url,
                                      data={"meta": json.dumps(error_msg)},
-                                     headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                     headers = {"Authorization": "Token {}".format(get_api_token())})
             raise Exception('Dynamic trial failed.\n' + error_msg['error_msg_dev'], e.args[0], e.args[1])
         
         if not hasWritePermissions:
@@ -364,7 +370,7 @@ def batchReprocess(session_ids,calib_id,static_id,dynamic_trialNames,poseDetecto
         # check if write permissions (session owner or admin)
         response = makeRequestWithRetry('GET',
                                         API_URL + "sessions/{}/get_session_permission/".format(session_id),
-                                        headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                        headers = {"Authorization": "Token {}".format(get_api_token())})
         permissions = response.json()
         hasWritePermissions = permissions['isAdmin'] or permissions['isOwner']
 
@@ -388,14 +394,14 @@ def batchReprocess(session_ids,calib_id,static_id,dynamic_trialNames,poseDetecto
                 _ = makeRequestWithRetry('PATCH',
                                          API_URL + "trials/{}/".format(calib_id_toProcess),
                                          data=statusData,
-                                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                         headers = {"Authorization": "Token {}".format(get_api_token())})
             except Exception as e:
                 print(e)
                 statusData = {'status':'error'}
                 _ = makeRequestWithRetry('PATCH',
                                          API_URL + "trials/{}/".format(calib_id_toProcess),
                                          data=statusData,
-                                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                         headers = {"Authorization": "Token {}".format(get_api_token())})
         
         if static_id == None:
             static_id_toProcess = getNeutralTrialID(session_id)
@@ -419,18 +425,18 @@ def batchReprocess(session_ids,calib_id,static_id,dynamic_trialNames,poseDetecto
                 _ = makeRequestWithRetry('PATCH',
                                          API_URL + "trials/{}/".format(static_id_toProcess),
                                          data=statusData,
-                                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                         headers = {"Authorization": "Token {}".format(get_api_token())})
             except Exception as e:
                 print(e)
                 statusData = {'status':'error'}
                 _ = makeRequestWithRetry('PATCH',
                                          API_URL + "trials/{}/".format(static_id_toProcess),
                                          data=statusData,
-                                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                         headers = {"Authorization": "Token {}".format(get_api_token())})
         if dynamic_ids == None:
             response = makeRequestWithRetry('GET',
                                             API_URL + "sessions/{}/".format(session_id),
-                                            headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                            headers = {"Authorization": "Token {}".format(get_api_token())})
             session = response.json()
             dynamic_ids_toProcess = [t['id'] for t in session['trials'] if (t['name'] != 'calibration' and t['name'] !='neutral')]
         else:
@@ -457,14 +463,14 @@ def batchReprocess(session_ids,calib_id,static_id,dynamic_trialNames,poseDetecto
                 _ = makeRequestWithRetry('PATCH',
                                          API_URL + "trials/{}/".format(dID),
                                          data=statusData,
-                                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                         headers = {"Authorization": "Token {}".format(get_api_token())})
             except Exception as e:
                 print(e)
                 statusData = {'status':'error'}
                 _ = makeRequestWithRetry('PATCH',
                                          API_URL + "trials/{}/".format(dID),
                                          data=statusData,
-                                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                         headers = {"Authorization": "Token {}".format(get_api_token())})
 
 def runTestSession(pose='all',isDocker=True,maxNumTries=3):
     # We retry test sessions because different sometimes when different

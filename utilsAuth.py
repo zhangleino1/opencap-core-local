@@ -15,6 +15,9 @@ API_URL = getAPIURL()
 
 #%% Get token 
 def getToken(saveEnvPath=None):
+    # 检查是否为本地模式 (不需要API认证)
+    if os.environ.get('OPENCAP_LOCAL_MODE', '').lower() == 'true':
+        return None
            
     if 'API_TOKEN' not in globals():
     
@@ -48,9 +51,8 @@ def getToken(saveEnvPath=None):
                 if saveEnvPath is not None:
                     envPath = os.path.join(saveEnvPath,'.env')
         
-                    f = open(envPath, "w")
-                    f.write('API_TOKEN="' + token + '"')
-                    f.close()
+                    with open(envPath, "w", encoding='utf-8') as f:
+                        f.write('API_TOKEN="' + token + '"')
                     print('Authentication token saved to '+ envPath + '. DO NOT CHANGE THIS FILE NAME. If you do, your authentication token will get pushed to github. Restart your terminal for env file to load.')
 
             except:

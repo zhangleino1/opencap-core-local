@@ -182,7 +182,7 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
             settings['resolutionPoseDetection'] = resolutionPoseDetection
         elif poseDetector == 'mmpose':
             settings['bbox_thr'] = bbox_thr
-        with open(pathSettings, 'w') as file:
+        with open(pathSettings, 'w', encoding='utf-8') as file:
             yaml.dump(settings, file)
 
     # %% Camera calibration.
@@ -204,7 +204,15 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                 camName = pathCam.split('/')[-1]
             cameraDirectories[camName] = os.path.join(sessionDir, 'Videos',
                                                       pathCam)
-            cameraModels[camName] = sessionMetadata['iphoneModel'][camName]        
+            # 支持通用摄像头，不仅仅是iPhone
+            if 'cameraModel' in sessionMetadata:
+                cameraModels[camName] = sessionMetadata['cameraModel'][camName]
+            elif 'iphoneModel' in sessionMetadata:
+                # 向后兼容旧的字段名
+                cameraModels[camName] = sessionMetadata['iphoneModel'][camName]
+            else:
+                # 如果没有摄像头型号信息，使用通用命名
+                cameraModels[camName] = f'GenericCamera_{camName}'        
         
         # Get cameras' intrinsics and extrinsics.     
         # Load parameters if saved, compute and save them if not.
@@ -429,9 +437,11 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                 outputMediaFolder=outputMediaFolder)
         except Exception as e:
             if len(e.args) == 2: # specific exception
+                logging.error(e.args[0], exc_info=True)
                 raise Exception(e.args[0], e.args[1])
             elif len(e.args) == 1: # generic exception
                 exception = "Triangulation failed. Verify your setup and try again. Visit https://www.opencap.ai/best-pratices to learn more about data collection and https://www.opencap.ai/troubleshooting for potential causes for a failed trial."
+                logging.error(exception, exc_info=True)
                 raise Exception(exception, traceback.format_exc())
         
         # Throw an error if not enough data
@@ -530,6 +540,8 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                 maxThreshold = 0.015
                 increment = 0.001
                 success = False
+                timeRange4Scaling = None  # 初始化变量
+                
                 while thresholdPosition <= maxThreshold and not success:
                     try:
                         timeRange4Scaling = getScaleTimeRange(
@@ -540,6 +552,10 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                     except Exception as e:
                         logging.info(f"Attempt identifying scaling time range with thresholdPosition {thresholdPosition} failed: {e}")
                         thresholdPosition += increment  # Increase the threshold for the next iteration
+
+                # 检查是否成功找到时间范围
+                if not success or timeRange4Scaling is None:
+                    raise Exception("Could not identify a suitable scaling time range after trying all thresholds")
 
                 # Run scale tool.
                 logging.info('Running Scaling')
@@ -610,5 +626,5 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
     if not extrinsicsTrial:
         if offset:
             settings['verticalOffset'] = vertical_offset_settings 
-        with open(pathSettings, 'w') as file:
+        with open(pathSettings, 'w', encoding='utf-8') as file:
             yaml.dump(settings, file)

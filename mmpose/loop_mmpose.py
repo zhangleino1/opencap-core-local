@@ -24,7 +24,7 @@ output_dir = "/mmpose/data/output_mmpose"
 
 generateVideo=False
 
-with open('/mmpose/defaultOpenCapSettings.json') as f:
+with open('/mmpose/defaultOpenCapSettings.json', encoding='utf-8') as f:
     defaultOpenCapSettings = json.load(f)
 bbox_thr = defaultOpenCapSettings['hrnet']
 model_config_person='/mmpose/faster_rcnn_r50_fpn_coco.py'

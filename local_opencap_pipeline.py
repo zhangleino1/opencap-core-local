@@ -23,6 +23,24 @@ import numpy as np
 from datetime import datetime
 import logging
 
+# 设置本地模式环境变量，跳过API认证
+os.environ['OPENCAP_LOCAL_MODE'] = 'true'
+# 设置UTF-8编码，避免Windows下的GBK编码问题
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+
+# 强制设置Python默认编码为UTF-8
+import locale
+import sys
+if sys.platform.startswith('win'):
+    try:
+        # 在Windows上强制设置UTF-8编码
+        sys.stdout.reconfigure(encoding='utf-8')
+        sys.stderr.reconfigure(encoding='utf-8')
+        sys.stdin.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Python 3.6及以下版本的兼容性
+        pass
+
 # 设置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -31,8 +49,36 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # 导入OpenCap核心模块
-from utils import getDataDirectory, importMetadata
-from main import main as opencap_main
+# 延迟导入utils以避免API token要求
+def getDataDirectory():
+    """获取数据目录，避免API token问题"""
+    import os
+    try:
+        from utils import getDataDirectory as _getDataDirectory
+        return _getDataDirectory()
+    except:
+        # 如果utils导入失败，使用默认本地路径
+        return os.path.dirname(os.path.abspath(__file__))
+
+def importMetadata(sessionDir):
+    """导入元数据，避免API token问题"""
+    try:
+        from utils import importMetadata as _importMetadata
+        return _importMetadata(sessionDir)
+    except:
+        # 如果utils导入失败，返回None
+        return None
+
+def opencap_main(*args, **kwargs):
+    """延迟导入main函数以避免API token问题"""
+    try:
+        from main import main as _main
+        return _main(*args, **kwargs)
+    except Exception as e:
+        logger.error(f"Failed to import or run main: {str(e)}")
+        import traceback
+        logger.error(f"Full traceback: {traceback.format_exc()}")
+        return False
 
 # 导入本地标定模块
 from main_calcIntrinsics_local import (
@@ -64,45 +110,56 @@ class LocalOpenCapPipeline:
         elif config_dict:
             return config_dict
         else:
-            return self._get_default_config()
+            return self._load_template_config()
     
-    def _get_default_config(self):
-        """获取默认配置"""
-        return {
-            'session': {
-                'name': f'LocalSession_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
-                'description': '本地OpenCap会话',
-                'subject_mass': 70.0,  # kg
-                'subject_height': 170.0  # cm
-            },
-            'calibration': {
-                'checkerboard': {
-                    'dimensions': [11, 8],  # [width, height] 内角点数
-                    'square_size': 60  # mm
+    def _load_template_config(self):
+        """从模板配置文件加载默认配置"""
+        template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'local_config_template.yaml')
+        
+        if os.path.exists(template_path):
+            with open(template_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                # 确保会话名称是最新的
+                if 'session' in config:
+                    config['session']['name'] = f'LocalSession_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                return config
+        else:
+            # 如果模板文件不存在，返回最基本的配置
+            return {
+                'session': {
+                    'name': f'LocalSession_{datetime.now().strftime("%Y%m%d_%H%M%S")}',
+                    'description': '本地OpenCap会话',
+                    'subject_mass': 67.0,
+                    'subject_height': 170.0
                 },
-                'n_images': 50,
-                'deployed_folders': ['Deployed_720_60fps', 'Deployed']
-            },
-            'processing': {
-                'pose_detector': 'OpenPose',  # 'OpenPose' or 'mmpose'
-                'resolution': '1x736',  # OpenPose分辨率
-                'bbox_threshold': 0.8,  # mmpose边界框阈值
-                'image_upsample_factor': 4,
-                'augmenter_model': 'v0.3',  # LSTM增强模型版本
-                'filter_frequency': 'default',
-                'scaling_setup': 'upright_standing_pose'
-            },
-            'output': {
-                'save_videos': True,
-                'delete_intermediate': False,
-                'generate_opensim': True
-            },
-            'directories': {
-                'input_videos': './LocalData/Videos',
-                'calibration_videos': './LocalData/Calibration',
-                'output': './LocalData/Results'
+                'calibration': {
+                    'checkerboard': {
+                        'dimensions': [5, 4],
+                        'square_size': 35
+                    },
+                    'n_images': 50,
+                    'deployed_folders': ['Deployed_720_60fps', 'Deployed']
+                },
+                'processing': {
+                    'pose_detector': 'OpenPose',
+                    'resolution': '1x736',
+                    'bbox_threshold': 0.8,
+                    'image_upsample_factor': 4,
+                    'augmenter_model': 'v0.3',
+                    'filter_frequency': 'default',
+                    'scaling_setup': 'upright_standing_pose'
+                },
+                'output': {
+                    'save_videos': True,
+                    'delete_intermediate': False,
+                    'generate_opensim': True
+                },
+                'directories': {
+                    'input_videos': './LocalData/Videos',
+                    'calibration_videos': './LocalData/Calibration',
+                    'output': './LocalData/Results'
+                }
             }
-        }
     
     def _validate_config(self):
         """验证配置参数"""
@@ -152,7 +209,8 @@ class LocalOpenCapPipeline:
             'checkerBoard': {
                 'black2BlackCornersWidth_n': self.config['calibration']['checkerboard']['dimensions'][0],
                 'black2BlackCornersHeight_n': self.config['calibration']['checkerboard']['dimensions'][1],
-                'squareSideLength_mm': self.config['calibration']['checkerboard']['square_size']
+                'squareSideLength_mm': self.config['calibration']['checkerboard']['square_size'],
+                'placement': 'backWall'  # 添加棋盘格放置位置参数
             },
             
             # 处理参数
@@ -160,6 +218,17 @@ class LocalOpenCapPipeline:
             'resolutionPoseDetection': self.config['processing']['resolution'],
             'augmenter_model': self.config['processing']['augmenter_model'],
             'imageUpsampleFactor': self.config['processing']['image_upsample_factor'],
+            
+            # 多摄像头型号支持 - 每个摄像头有独立的型号标识 (支持各种品牌摄像头)
+            'cameraModel': {},
+            
+            # OpenSim模型配置
+            'openSimModel': 'LaiUhlrich2022',
+            
+            # 标记点增强配置 - 必需的配置项
+            'markerAugmentationSettings': {
+                'markerAugmenterModel': 'LSTM'  # 模型类型固定为LSTM，版本由augmenter_model指定
+            },
             
             # 本地处理标识
             'localProcessing': True,
@@ -197,20 +266,24 @@ class LocalOpenCapPipeline:
         trial_dir = os.path.join(self.session_dir, trial_name)
         os.makedirs(trial_dir, exist_ok=True)
         
-        # 为每个摄像头创建目录并复制视频
+        # 为每个摄像头创建目录并复制视频 - 使用官方OpenCap目录结构
         for camera_name, video_file in cameras.items():
             camera_dir = os.path.join(self.session_dir, 'Videos', camera_name)
-            os.makedirs(camera_dir, exist_ok=True)
+            # 创建符合官方OpenCap期望的目录结构: Videos/CameraName/InputMedia/trialName/
+            input_media_dir = os.path.join(camera_dir, 'InputMedia', trial_name)
+            os.makedirs(input_media_dir, exist_ok=True)
             
-            dest_path = os.path.join(camera_dir, f"{trial_name}.mp4")
+            # 视频文件放在 InputMedia/trialName/trial_id.mp4
+            dest_path = os.path.join(input_media_dir, f"{trial_name}.mp4")
             shutil.copy2(video_file, dest_path)
             logger.info(f"视频已复制: {video_file} -> {dest_path}")
         
-        # 处理标定视频（如果提供）
+        # 处理标定视频（如果提供）- 创建标定试验
+        calib_trial_name = None
         if calibration_directory and os.path.exists(calibration_directory):
-            self._setup_calibration_videos(calibration_directory, cameras.keys())
+            calib_trial_name = self._setup_calibration_trial(calibration_directory, cameras.keys())
         
-        return trial_name, list(cameras.keys())
+        return trial_name, list(cameras.keys()), calib_trial_name
     
     def _organize_videos_by_camera(self, video_files):
         """根据文件名将视频按摄像头分组"""
@@ -238,37 +311,67 @@ class LocalOpenCapPipeline:
         logger.info(f"检测到 {len(cameras)} 个摄像头: {list(cameras.keys())}")
         return cameras
     
-    def _setup_calibration_videos(self, calibration_directory, camera_names):
-        """设置标定视频"""
+    def _setup_calibration_trial(self, calibration_directory, camera_names):
+        """设置标定试验 - 创建符合官方OpenCap结构的标定试验"""
         calib_files = glob.glob(os.path.join(calibration_directory, "*.mp4"))
         
         if not calib_files:
             logger.warning(f"标定目录中没有找到.mp4文件: {calibration_directory}")
-            return
+            return None
         
-        # 创建标定试验目录
-        calib_trial = "calibration"
-        calib_dir = os.path.join(self.session_dir, calib_trial)
-        os.makedirs(calib_dir, exist_ok=True)
+        # 创建标定试验名称
+        calib_trial_name = "calibration"
         
         # 匹配标定视频到摄像头
         for camera_name in camera_names:
-            # 寻找匹配的标定视频
+            # 寻找匹配的标定视频 - 支持多种命名方式
             matching_file = None
+            camera_base_name = camera_name.lower()
+            
+            # 尝试多种匹配模式
             for calib_file in calib_files:
-                if camera_name.lower() in os.path.basename(calib_file).lower():
+                calib_filename = os.path.basename(calib_file).lower()
+                
+                # 模式1: 直接包含摄像头名称
+                if camera_base_name in calib_filename:
                     matching_file = calib_file
                     break
+                
+                # 模式2: 提取摄像头编号进行匹配 (如 camera1_walk -> camera1)
+                import re
+                camera_number_match = re.search(r'camera(\d+)', camera_base_name)
+                if camera_number_match:
+                    camera_num = camera_number_match.group(1)
+                    if f'camera{camera_num}' in calib_filename:
+                        matching_file = calib_file
+                        break
+                
+                # 模式3: 提取纯数字编号进行匹配
+                number_match = re.search(r'(\d+)', camera_base_name)
+                if number_match:
+                    cam_num = number_match.group(1)
+                    if cam_num in calib_filename:
+                        matching_file = calib_file
+                        break
             
+            # 如果仍然没有匹配，且文件数量相同，按顺序分配
             if matching_file is None and len(calib_files) == len(camera_names):
-                # 如果数量匹配，按顺序分配
-                matching_file = calib_files[list(camera_names).index(camera_name)]
+                sorted_calib_files = sorted(calib_files)
+                sorted_camera_names = sorted(camera_names)
+                matching_file = sorted_calib_files[sorted_camera_names.index(camera_name)]
             
             if matching_file:
-                camera_calib_dir = os.path.join(self.session_dir, 'Videos', camera_name)
-                dest_path = os.path.join(camera_calib_dir, f"{calib_trial}.mp4")
+                # 创建标定试验的官方目录结构: Videos/CameraName/InputMedia/calibration/
+                camera_dir = os.path.join(self.session_dir, 'Videos', camera_name)
+                calib_input_media_dir = os.path.join(camera_dir, 'InputMedia', calib_trial_name)
+                os.makedirs(calib_input_media_dir, exist_ok=True)
+                
+                # 标定视频放在 InputMedia/calibration/calibration.mp4
+                dest_path = os.path.join(calib_input_media_dir, f"{calib_trial_name}.mp4")
                 shutil.copy2(matching_file, dest_path)
                 logger.info(f"标定视频已复制: {matching_file} -> {dest_path}")
+        
+        return calib_trial_name
     
     def run_calibration(self, trial_names=None):
         """
@@ -280,19 +383,22 @@ class LocalOpenCapPipeline:
         logger.info("开始相机标定...")
         
         if trial_names is None:
-            # 查找标定视频
+            # 查找标定视频 - 现在在InputMedia/calibration/目录下
+            trial_names = ["calibration"]  # 直接使用标定试验名称
+            
+            # 验证标定文件存在
+            calib_exists = False
             video_dirs = glob.glob(os.path.join(self.session_dir, 'Videos', '*'))
-            trial_names = []
-            
             for video_dir in video_dirs:
-                calib_files = glob.glob(os.path.join(video_dir, "*calibration*.mp4"))
+                # 检查新的目录结构: Videos/CameraName/InputMedia/calibration/calibration.mp4
+                calib_files = glob.glob(os.path.join(video_dir, "InputMedia", "calibration", "calibration.mp4"))
                 if calib_files:
-                    trial_names.extend([os.path.splitext(os.path.basename(f))[0] for f in calib_files])
+                    calib_exists = True
+                    break
             
-            if not trial_names:
-                # 使用所有可用视频进行标定
-                trial_names = [os.path.splitext(os.path.basename(f))[0] 
-                             for f in glob.glob(os.path.join(self.session_dir, 'Videos', '*', '*.mp4'))]
+            if not calib_exists:
+                logger.error("未找到标定视频文件！标定需要包含棋盘格的视频。")
+                return False, None
         
         if not trial_names:
             raise FileNotFoundError("没有找到可用于标定的视频文件")
@@ -304,26 +410,70 @@ class LocalOpenCapPipeline:
         }
         
         try:
-            CamParamsAverage, CamParamList, intrinsicComparisons, cameraModel = computeAverageIntrinsicsLocal(
-                self.session_dir,
-                trial_names,
-                CheckerBoardParams,
-                nImages=self.config['calibration']['n_images']
-            )
+            # 新的多摄像头分别标定逻辑
+            videos_dir = os.path.join(self.session_dir, 'Videos')
+            camera_models = {}
+            session_metadata = {}
             
-            # 保存标定结果
-            for deployedFolderName in self.config['calibration']['deployed_folders']:
-                permIntrinsicDir = os.path.join(
-                    self.base_dir, 'CameraIntrinsics',
-                    cameraModel, deployedFolderName
+            # 获取所有摄像头目录
+            camera_dirs = glob.glob(os.path.join(videos_dir, "*"))
+            camera_dirs = [d for d in camera_dirs if os.path.isdir(d)]
+            
+            if not camera_dirs:
+                raise FileNotFoundError("没有找到摄像头目录")
+            
+            logger.info(f"开始为 {len(camera_dirs)} 个摄像头分别标定...")
+            
+            for camera_dir in camera_dirs:
+                camera_name = os.path.basename(camera_dir)
+                logger.info(f"标定摄像头: {camera_name}")
+                
+                # 查找该摄像头的标定视频 - 使用新的目录结构
+                camera_trial_videos = []
+                for trial_name in trial_names:
+                    # 新目录结构: Videos/CameraName/InputMedia/calibration/calibration.mp4
+                    video_pattern = os.path.join(camera_dir, "InputMedia", trial_name, f"{trial_name}.mp4")
+                    matching_files = glob.glob(video_pattern)
+                    camera_trial_videos.extend(matching_files)
+                
+                if not camera_trial_videos:
+                    logger.warning(f"摄像头 {camera_name} 没有找到标定视频")
+                    continue
+                
+                # 为每个摄像头单独标定
+                CamParams, intrinsicComparison, detectedModel = self._calibrate_single_camera(
+                    camera_trial_videos, CheckerBoardParams
                 )
-                intrinsicFile = os.path.join(permIntrinsicDir, 'cameraIntrinsics.pickle')
-                saveCameraParametersLocal(intrinsicFile, CamParamsAverage)
+                
+                if CamParams is None:
+                    logger.error(f"摄像头 {camera_name} 标定失败")
+                    continue
+                
+                # 生成该摄像头的型号名称
+                camera_model = f"{detectedModel}_{camera_name}" if detectedModel else f"Camera_{camera_name}"
+                camera_models[camera_name] = camera_model
+                
+                # 保存该摄像头的内参
+                for deployedFolderName in self.config['calibration']['deployed_folders']:
+                    permIntrinsicDir = os.path.join(
+                        self.base_dir, 'CameraIntrinsics',
+                        camera_model, deployedFolderName
+                    )
+                    intrinsicFile = os.path.join(permIntrinsicDir, 'cameraIntrinsics.pickle')
+                    saveCameraParametersLocal(intrinsicFile, CamParams)
+                
+                logger.info(f"摄像头 {camera_name} 标定完成 - 型号: {camera_model}")
+                logger.info(f"摄像头 {camera_name} 重投影误差: {CamParams.get('reprojectionError', 0):.2f} 像素")
             
-            logger.info(f"相机标定完成 - 型号: {cameraModel}")
-            logger.info(f"平均重投影误差: {CamParamsAverage.get('reprojectionError', 0):.2f} 像素")
+            # 更新sessionMetadata中的iphoneModel字段
+            self._update_session_metadata_with_camera_models(camera_models)
             
-            return True, cameraModel
+            if not camera_models:
+                raise Exception("所有摄像头标定都失败了")
+            
+            logger.info(f"多摄像头标定完成，共标定 {len(camera_models)} 个摄像头")
+            
+            return True, camera_models
             
         except Exception as e:
             logger.error(f"相机标定失败: {str(e)}")
@@ -356,8 +506,7 @@ class LocalOpenCapPipeline:
                 imageUpsampleFactor=self.config['processing']['image_upsample_factor'],
                 filter_frequency=self.config['processing']['filter_frequency'],
                 scaling_setup=self.config['processing']['scaling_setup'],
-                scaleModel=self.config['output']['generate_opensim'],
-                generateVideo=self.config['output']['save_videos']
+                scaleModel=self.config['output']['generate_opensim']
             )
             
             if success is not False:  # main()通常不返回False，异常时会抛出
@@ -388,13 +537,20 @@ class LocalOpenCapPipeline:
             self.create_session_metadata()
             
             # 2. 设置视频数据
-            trial_name, camera_names = self.setup_from_videos(video_directory, calibration_directory)
+            trial_name, camera_names, calib_trial_name = self.setup_from_videos(video_directory, calibration_directory)
             
             # 3. 运行相机标定（如果有标定视频）
             if calibration_directory:
                 calib_success, camera_model = self.run_calibration()
                 if not calib_success:
                     logger.warning("相机标定失败，尝试使用现有标定参数")
+                
+                # 处理标定试验以计算外参
+                if calib_trial_name:
+                    logger.info("处理标定试验以计算外参...")
+                    calib_success = self.process_trial(calib_trial_name, camera_names, 'calibration')
+                    if not calib_success:
+                        logger.warning("标定试验处理失败，但继续处理运动试验")
             
             # 4. 处理运动试验
             success = self.process_trial(trial_name, camera_names, 'dynamic')
@@ -435,6 +591,113 @@ class LocalOpenCapPipeline:
         
         logger.info(f"处理报告已保存: {report_path}")
     
+    def _calibrate_single_camera(self, video_files, CheckerBoardParams):
+        """
+        为单个摄像头标定内参
+        
+        Args:
+            video_files: 该摄像头的标定视频文件列表
+            CheckerBoardParams: 标定板参数
+            
+        Returns:
+            CamParams: 摄像头参数
+            intrinsicComparison: 内参比较数据  
+            detectedModel: 检测到的摄像头型号
+        """
+        from main_calcIntrinsics_local import calibrateCameraFromVideo, extractCameraModelFromFilename
+        
+        CamParamList = []
+        detected_models = []
+        
+        for video_file in video_files:
+            logger.info(f"  处理视频: {os.path.basename(video_file)}")
+            
+            # 检测摄像头型号
+            detected_model = extractCameraModelFromFilename(video_file)
+            if detected_model:
+                detected_models.append(detected_model)
+            
+            # 标定该视频
+            try:
+                CamParams = calibrateCameraFromVideo(
+                    video_file, CheckerBoardParams, 
+                    nImages=self.config['calibration']['n_images']
+                )
+                
+                if CamParams is not None:
+                    CamParamList.append(CamParams)
+                    reprojection_error = CamParams.get('reprojectionError', 0)
+                    logger.info(f"    视频信息: {CamParams.get('resolution', 'Unknown')}, "
+                              f"{CamParams.get('frameRate', 'Unknown')}fps, "
+                              f"{CamParams.get('nFrames', 'Unknown')}帧")
+                    logger.info(f"    CheckerBoardParams使用 {CheckerBoardParams} 张图像进行标定")
+                    logger.info(f"    找到 {CamParams.get('nImages', 0)} 幅有效标定图像")
+                    logger.info(f"    重投影误差: {reprojection_error:.2f} 像素")
+                
+            except Exception as e:
+                logger.warning(f"    视频 {os.path.basename(video_file)} 标定失败: {str(e)}")
+                continue
+        
+        if not CamParamList:
+            logger.error("    没有成功标定的视频")
+            return None, None, None
+        
+        # 如果有多个视频，计算平均内参
+        if len(CamParamList) > 1:
+            # 简单平均所有内参矩阵和畸变参数
+            avg_params = CamParamList[0].copy()
+            
+            # 平均内参矩阵K
+            K_sum = sum([params['K'] for params in CamParamList])
+            avg_params['K'] = K_sum / len(CamParamList)
+            
+            # 平均畸变参数
+            if 'distCoeff' in avg_params:
+                distCoeff_sum = sum([params['distCoeff'] for params in CamParamList])
+                avg_params['distCoeff'] = distCoeff_sum / len(CamParamList)
+            
+            # 平均重投影误差
+            avg_error = sum([params.get('reprojectionError', 0) for params in CamParamList]) / len(CamParamList)
+            avg_params['reprojectionError'] = avg_error
+            
+            logger.info(f"    平均重投影误差: {avg_error:.2f} 像素")
+        else:
+            avg_params = CamParamList[0]
+        
+        # 确定摄像头型号 - 支持各种品牌摄像头
+        if detected_models:
+            # 使用最常见的型号
+            detectedModel = max(set(detected_models), key=detected_models.count)
+        else:
+            # 如果无法从文件名检测，使用通用命名
+            detectedModel = "GenericCamera"
+        
+        return avg_params, {}, detectedModel
+    
+    def _update_session_metadata_with_camera_models(self, camera_models):
+        """
+        更新sessionMetadata中的cameraModel字段 - 支持各种品牌摄像头
+        
+        Args:
+            camera_models: {camera_name: camera_model} 字典
+        """
+        metadata_path = os.path.join(self.session_dir, 'sessionMetadata.yaml')
+        
+        if os.path.exists(metadata_path):
+            with open(metadata_path, 'r', encoding='utf-8') as f:
+                metadata = yaml.safe_load(f)
+        else:
+            metadata = {}
+        
+        # 更新cameraModel字段 (支持各种品牌摄像头，不仅仅是iPhone)
+        metadata['cameraModel'] = camera_models
+        
+        # 保存更新后的元数据
+        with open(metadata_path, 'w', encoding='utf-8') as f:
+            yaml.dump(metadata, f, allow_unicode=True, default_flow_style=False)
+        
+        logger.info(f"已更新sessionMetadata，摄像头型号: {camera_models}")
+    
     def _list_output_files(self):
         """列出输出文件"""
         output_files = {}
@@ -457,11 +720,30 @@ class LocalOpenCapPipeline:
 # 便捷函数
 def create_config_template(output_path):
     """创建配置文件模板"""
-    pipeline = LocalOpenCapPipeline()
-    config = pipeline._get_default_config()
+    template_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'local_config_template.yaml')
     
-    with open(output_path, 'w', encoding='utf-8') as f:
-        yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+    if os.path.exists(template_path):
+        # 检查是否是同一个文件
+        if os.path.abspath(template_path) != os.path.abspath(output_path):
+            # 复制现有模板文件
+            shutil.copy2(template_path, output_path)
+        
+        # 更新会话名称为当前时间
+        with open(output_path, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        if 'session' in config:
+            config['session']['name'] = f'LocalSession_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
+    else:
+        # 如果模板不存在，创建一个最基本的模板
+        pipeline = LocalOpenCapPipeline()
+        config = pipeline._load_template_config()
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            yaml.dump(config, f, allow_unicode=True, default_flow_style=False)
     
     print(f"配置文件模板已创建: {output_path}")
 

@@ -43,14 +43,17 @@ def computeAverageIntrinsicsLocal(session_path, trialIDs, CheckerBoardParams, nI
     print(f"开始处理 {len(trialIDs)} 个试验...")
     
     for i, trial_id in enumerate(trialIDs):
-        trial_path = os.path.join(session_path, trial_id)
+        # 查找所有摄像头目录下的指定试验视频
+        camera_dirs = glob.glob(os.path.join(session_path, "*"))
+        video_files = []
         
-        if not os.path.exists(trial_path):
-            print(f"警告: 试验目录不存在: {trial_path}")
-            continue
-            
-        # 查找视频文件
-        video_files = glob.glob(os.path.join(trial_path, "*.mp4"))
+        for camera_dir in camera_dirs:
+            if os.path.isdir(camera_dir):
+                # 查找该摄像头目录下的标定视频
+                pattern = os.path.join(camera_dir, f"{trial_id}.mp4")
+                matching_files = glob.glob(pattern)
+                video_files.extend(matching_files)
+        
         if not video_files:
             print(f"警告: 试验 {trial_id} 中没有找到视频文件")
             continue
@@ -111,25 +114,56 @@ def computeAverageIntrinsicsLocal(session_path, trialIDs, CheckerBoardParams, nI
     return CamParamsAverage, CamParamList, intrinsicComparisons, detectedCameraModel
 
 def extractCameraModelFromFilename(video_file):
-    """从视频文件名推断摄像头型号"""
+    """从视频文件名推断摄像头型号 - 支持各种品牌摄像头"""
     filename = os.path.basename(video_file).lower()
     
-    # 常见摄像头型号匹配模式
+    # 扩展的摄像头型号匹配模式 - 支持更多品牌和命名
     camera_patterns = {
+        # 苹果设备
         'iphone': r'iphone[\d\w,\.]+',
-        'samsung': r'samsung[\d\w]+',
-        'pixel': r'pixel[\d\w]+',
-        'camera': r'camera[\d]+',
-        'cam': r'cam[\d]+',
+        'ipad': r'ipad[\d\w,\.]+',
+        
+        # 安卓设备
+        'samsung': r'samsung[\d\w\-_]+',
+        'galaxy': r'galaxy[\d\w\-_]+',
+        'pixel': r'pixel[\d\w\-_]+',
+        'huawei': r'huawei[\d\w\-_]+',
+        'xiaomi': r'xiaomi[\d\w\-_]+',
+        'oppo': r'oppo[\d\w\-_]+',
+        'vivo': r'vivo[\d\w\-_]+',
+        'oneplus': r'oneplus[\d\w\-_]+',
+        
+        # 通用相机命名
+        'camera': r'camera[\d\w\-_]*',
+        'cam': r'cam[\d\w\-_]*',
+        'webcam': r'webcam[\d\w\-_]*',
+        
+        # 专业相机品牌
+        'canon': r'canon[\d\w\-_]*',
+        'nikon': r'nikon[\d\w\-_]*',
+        'sony': r'sony[\d\w\-_]*',
+        'gopro': r'gopro[\d\w\-_]*',
+        
+        # 其他设备
+        'usb': r'usb[\d\w\-_]*',
+        'ip': r'ip[\d\w\-_]*',
     }
     
     import re
     for brand, pattern in camera_patterns.items():
         match = re.search(pattern, filename)
         if match:
-            return match.group(0).replace(',', '_').replace('.', '_')
+            # 标准化命名：替换特殊字符为下划线
+            model = match.group(0).replace(',', '_').replace('.', '_').replace('-', '_')
+            return model.capitalize()  # 首字母大写
     
-    return None
+    # 如果没有匹配到任何模式，尝试提取摄像头编号
+    number_pattern = r'(\d+)'
+    match = re.search(number_pattern, filename)
+    if match:
+        return f"GenericCamera{match.group(0)}"
+    
+    return "UnknownCamera"
 
 def calibrateCameraFromVideo(video_file, CheckerBoardParams, nImages):
     """
@@ -157,6 +191,7 @@ def calibrateCameraFromVideo(video_file, CheckerBoardParams, nImages):
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
     print(f"  视频信息: {width}x{height}, {fps}fps, {total_frames}帧")
+    print(f"  CheckerBoardParams使用 {CheckerBoardParams} 张图像进行标定")
     
     # 设置标定参数
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -183,13 +218,27 @@ def calibrateCameraFromVideo(video_file, CheckerBoardParams, nImages):
         ret, frame = cap.read()
         
         if not ret:
+            print(f"  警告: 无法读取第{frame_idx}帧，可能是视频编码损坏")
+            continue
+        
+        if frame is None:
+            print(f"  警告: 第{frame_idx}帧为空")
             continue
             
-        # 转换为灰度图
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # 寻找棋盘格角点
-        ret, corners = cv2.findChessboardCorners(gray, CheckerBoardParams['dimensions'], None)
+        try:
+            # 检查帧是否有效
+            if frame.shape[0] == 0 or frame.shape[1] == 0:
+                print(f"  警告: 第{frame_idx}帧尺寸异常")
+                continue
+                
+            # 转换为灰度图
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            
+            # 寻找棋盘格角点
+            ret, corners = cv2.findChessboardCorners(gray, CheckerBoardParams['dimensions'], None)
+        except Exception as e:
+            print(f"  警告: 第{frame_idx}帧处理异常: {e}")
+            continue
         
         if ret:
             # 细化角点位置
@@ -203,6 +252,13 @@ def calibrateCameraFromVideo(video_file, CheckerBoardParams, nImages):
     
     if valid_images < 10:  # 最少需要10幅图像
         print(f"  标定失败: 只找到 {valid_images} 幅有效图像，少于最低要求(10幅)")
+        print(f"  可能的原因:")
+        print(f"    1. 视频编码损坏 - 尝试用其他工具重新编码视频")
+        print(f"    2. 棋盘格尺寸不匹配 - 检查配置文件中的棋盘格参数")
+        print(f"    3. 视频中棋盘格不够清晰 - 确保棋盘格占据视频画面的合适比例")
+        print(f"  建议:")
+        print(f"    - 使用ffmpeg重新编码: ffmpeg -i input.mp4 -c:v libx264 -crf 20 output.mp4")
+        print(f"    - 检查棋盘格尺寸配置是否正确: {CheckerBoardParams}")
         return None
     
     print(f"  找到 {valid_images} 幅有效标定图像")

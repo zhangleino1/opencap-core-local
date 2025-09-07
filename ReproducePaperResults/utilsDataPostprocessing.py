@@ -235,7 +235,7 @@ def storage2numpy(storage_file, excess_header_entries=0):
         >>> data['ground_force_vy']
     """
     # What's the line number of the line containing 'endheader'?
-    f = open(storage_file, 'r')
+    f = open(storage_file, 'r', encoding='utf-8')
 
     header_line = False
     for i, line in enumerate(f):

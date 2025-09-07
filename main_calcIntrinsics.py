@@ -49,7 +49,7 @@ if os.path.exists(metadataPath):
 
 if loadTrialInfo:
     if os.path.exists(trialFile):
-        with open(trialFile, 'r') as f:
+        with open(trialFile, 'r', encoding='utf-8') as f:
             trialInfo = yaml.safe_load(f)
             trials = trialInfo['trials']
             CheckerBoardParams = {
@@ -78,7 +78,7 @@ trialInfo = {'trials':trials,
              'nSquaresHeight':CheckerBoardParams['dimensions'][1],
              'squareSize':CheckerBoardParams['squareSize'],
              'cameraModel':cameraModel,}
-with open(trialFile, 'w') as f:
+with open(trialFile, 'w', encoding='utf-8') as f:
     yaml.dump(trialInfo,f)
     
 with open(intrinsicComparisonFile, 'wb') as f:

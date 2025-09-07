@@ -32,7 +32,7 @@ if fieldStudy:
     
     # load trialnames
     trialFileName = os.path.join(os.path.abspath(os.path.dirname(__file__)),'fieldStudyTrialNames.yml')
-    with open(trialFileName, "r") as stream:
+    with open(trialFileName, "r", encoding="utf-8") as stream:
         trialDict = yaml.safe_load(stream)
         
 else:

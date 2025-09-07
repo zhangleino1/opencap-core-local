@@ -126,7 +126,7 @@ for subject in subjects:
         sessionMetadata = importMetadata(pathMetadataNew)
         sessionMetadata['openSimModel'] = (
             'LaiUhlrich2022')
-        with open(pathMetadataNew, 'w') as file:
+        with open(pathMetadataNew, 'w', encoding='utf-8') as file:
                 yaml.dump(sessionMetadata, file)        
         for cam in os.listdir(pathSession):
             if "Cam" not in cam:

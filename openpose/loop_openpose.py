@@ -80,7 +80,7 @@ video_path = "/openpose/data/video_openpose.mov"
 output_dir = "/openpose/data/output_openpose"
 
 # Set resolution for OpenPose ('default', '1x736', or '1x1008_4scales').
-with open('/openpose/defaultOpenCapSettings.json') as f:
+with open('/openpose/defaultOpenCapSettings.json', encoding='utf-8') as f:
     defaultOpenCapSettings = json.load(f)
 resolutionPoseDetection = defaultOpenCapSettings['openpose']
     

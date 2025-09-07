@@ -50,7 +50,7 @@ class TRCFile(object):
         # ---------------------------------
         # Split by any whitespace.
         # TODO may cause issues with paths that have spaces in them.
-        f = open(fpath)
+        f = open(fpath, encoding='utf-8')
         # These are lists of each entry on the first few lines.
         first_line = f.readline().split()
         # Skip the 2nd line.
@@ -188,7 +188,7 @@ class TRCFile(object):
             Valid file path to which this TRCFile is saved.
 
         """
-        f = open(fpath, 'w')
+        f = open(fpath, 'w', encoding='utf-8')
 
         # Line 1.
         f.write('PathFileType  4\t(X/Y/Z) %s\n' % os.path.split(fpath)[0])

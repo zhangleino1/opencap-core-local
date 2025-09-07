@@ -573,7 +573,7 @@ def exportTRCFromOpenPosePK(pathPKFolder, fileName):
         data = np.concatenate((data, positionMarker), axis=1)    
     
     pathOutputFile = os.path.join(pathPKFolder, fileName + '_openpose.trc')
-    with open(pathOutputFile, "w") as f:
+    with open(pathOutputFile, "w", encoding='utf-8') as f:
         numpy2TRC(f, data, markers, fc=fc, units="m")
         
 # %% This checks if force and IK data are of same length.
@@ -702,7 +702,7 @@ def generateVisualizerJson(modelPath,ikPath,jsonOutputPath,statesInDegrees=True,
             visualizeDict['bodies'][body.getName()]['rotation'].append(c_rotations.tolist())
             visualizeDict['bodies'][body.getName()]['translation'].append(c_translations.tolist())            
             
-    with open(jsonOutputPath, 'w') as f:
+    with open(jsonOutputPath, 'w', encoding='utf-8') as f:
         json.dump(visualizeDict, f)
 
     return        

@@ -437,7 +437,7 @@ def saveJsonsAsPkl(json_directory, outputPklPath, videoName):
         
         if not os.path.isfile(image_json):
             break
-        with open(image_json) as data_file:  
+        with open(image_json, encoding='utf-8') as data_file:  
             data = json.load(data_file)
         
         data4people = []

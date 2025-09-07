@@ -4,14 +4,19 @@
 """
 
 import os
+# 设置本地模式环境变量，确保在导入其他模块前设置
+os.environ['OPENCAP_LOCAL_MODE'] = 'true'
+# 设置UTF-8编码，避免Windows下的GBK编码问题
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 from local_opencap_pipeline import LocalOpenCapPipeline, run_local_opencap, create_config_template
 
 # ==================== 示例1: 最简单的使用方式 ====================
 def example_simple_usage():
     """最简单的使用方式 - 只需提供视频目录"""
     
-    video_directory = "./example_videos"  # 包含运动视频的目录
-    calibration_directory = "./example_calibration"  # 可选：标定视频目录
+    video_directory = "./LocalData/Videos"  # 包含运动视频的目录
+    calibration_directory = "./LocalData/Calibration"  # 可选：标定视频目录
     
     # 一行代码处理整个会话
     success = run_local_opencap(
@@ -31,15 +36,15 @@ def example_with_config():
     """使用配置文件的方式"""
     
     # 1. 创建配置文件模板
-    config_path = "my_opencap_config.yaml"
+    config_path = "local_config_template.yaml"
     create_config_template(config_path)
     print(f"配置文件模板已创建: {config_path}")
     print("请根据需要修改配置，然后重新运行")
     
     # 2. 使用配置文件处理
     success = run_local_opencap(
-        video_dir="./example_videos",
-        calibration_dir="./example_calibration",
+        video_dir="./LocalData/Videos",
+        calibration_dir="./LocalData/Calibration",
         config_file=config_path
     )
     
@@ -82,8 +87,8 @@ def example_advanced_usage():
         
         # 2. 设置视频数据
         trial_name, camera_names = pipeline.setup_from_videos(
-            video_directory="./example_videos",
-            calibration_directory="./example_calibration"
+            video_directory="./LocalData/Videos",
+            calibration_directory="./LocalData/Calibration"
         )
         
         # 3. 运行相机标定
@@ -231,7 +236,7 @@ if __name__ == "__main__":
     # example_simple_usage()
     
     # 示例2: 配置文件
-    # example_with_config()
+    example_with_config()
     
     # 示例3: 高级用法
     # example_advanced_usage()
@@ -240,4 +245,4 @@ if __name__ == "__main__":
     # example_batch_processing()
     
     # 故障排除指南
-    troubleshooting_guide()
+    # troubleshooting_guide()

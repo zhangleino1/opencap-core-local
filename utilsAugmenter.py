@@ -69,7 +69,7 @@ def augmentTRC(pathInputTRCFile, subject_mass, subject_height,
         trc_data_data = trc_data[:,1:]
         
         # Step 2: Normalize with reference marker position.
-        with open(os.path.join(augmenterModelDir, "metadata.json"), 'r') as f:
+        with open(os.path.join(augmenterModelDir, "metadata.json"), 'r', encoding='utf-8') as f:
             metadata = json.load(f)
         referenceMarker = metadata['reference_marker']
         referenceMarker_data = trc_file.marker(referenceMarker)
@@ -107,7 +107,7 @@ def augmentTRC(pathInputTRCFile, subject_mass, subject_height,
             inputs = np.reshape(inputs, (1, inputs.shape[0], inputs.shape[1]))
             
         # %% Load model and weights, and predict outputs.
-        json_file = open(os.path.join(augmenterModelDir, "model.json"), 'r')
+        json_file = open(os.path.join(augmenterModelDir, "model.json"), 'r', encoding='utf-8')
         pretrainedModel_json = json_file.read()
         json_file.close()
         model = tf.keras.models.model_from_json(pretrainedModel_json)

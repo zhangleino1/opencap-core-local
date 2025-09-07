@@ -1,112 +1,32 @@
-# 本地OpenCap处理管道配置文件
-# 所有参数都有合理的默认值，你只需要修改必要的部分
-
-# 会话设置
-session:
-  name: 'LocalSession_2024'  # 会话名称，建议包含日期和描述
-  description: '本地OpenCap运动捕获会话'  # 会话描述
-  subject_mass: 70.0  # 受试者体重 (kg)
-  subject_height: 170.0  # 受试者身高 (cm)
-
-# 相机标定设置
 calibration:
   checkerboard:
-    dimensions: [11, 8]  # 标定板内角点数量 [宽度, 高度]
-    square_size: 60  # 标定板正方形边长 (毫米)
-  n_images: 50  # 每个视频使用的标定图像数量
-  deployed_folders: ['Deployed_720_60fps', 'Deployed']  # 标定结果保存文件夹
-
-# 处理参数设置
-processing:
-  pose_detector: 'OpenPose'  # 姿态检测器: 'OpenPose' 或 'mmpose'
-  
-  # OpenPose设置
-  resolution: '1x736'  # 分辨率选项:
-                      # 'default' - 1x368 (低内存需求)
-                      # '1x736' - 1x736 (推荐，平衡准确性和性能)
-                      # '1x736_2scales' - 1x736双尺度 (更准确，需要8GB显存)
-                      # '1x1008_4scales' - 1x1008四尺度 (最准确，需要24GB显存)
-  
-  # MMPose设置 (当pose_detector = 'mmpose'时使用)
-  bbox_threshold: 0.8  # 人体检测边界框置信度阈值
-  
-  # 通用设置
-  image_upsample_factor: 4  # 标定图像上采样因子
-  augmenter_model: 'v0.3'  # LSTM增强模型版本: 'v0.0', 'v0.1', 'v0.2', 'v0.3'
-  filter_frequency: 'default'  # 滤波频率设置
-  scaling_setup: 'upright_standing_pose'  # OpenSim缩放设置
-
-# 输出设置
-output:
-  save_videos: true  # 是否保存处理后的视频
-  delete_intermediate: false  # 是否删除中间文件
-  generate_opensim: true  # 是否生成OpenSim分析结果
-
-# 目录设置 (通常不需要修改)
+    dimensions:
+    - 5
+    - 4
+    square_size: 35
+  deployed_folders:
+  - Deployed_720_60fps
+  - Deployed
+  n_images: 50
 directories:
-  input_videos: './LocalData/Videos'  # 输入视频目录
-  calibration_videos: './LocalData/Calibration'  # 标定视频目录
-  output: './LocalData/Results'  # 输出结果目录
-
-# ==================== 高级设置 ====================
-# 下面的设置适用于有特殊需求的用户
-
-# 相机设置
-cameras:
-  # 指定要使用的摄像头，留空表示使用全部
-  cameras_to_use: []  # 例如: ['camera1', 'camera2']
-  
-  # 自定义相机内参路径 (如果有预先标定的参数)
-  intrinsics_path: null  # 例如: './custom_intrinsics.pickle'
-
-# 处理优化设置
-optimization:
-  # 并行处理设置
-  use_multiprocessing: false  # 是否使用多进程处理
-  n_processes: 4  # 进程数量
-  
-  # 内存管理
-  max_frames_per_batch: 100  # 每批处理的最大帧数
-  clear_cache_frequency: 50  # 清理缓存的频率
-
-# 质量控制设置
-quality_control:
-  # 姿态检测质量阈值
-  min_pose_confidence: 0.1  # 最小姿态置信度
-  min_keypoints_visible: 5  # 最少可见关键点数量
-  
-  # 3D重建质量阈值  
-  max_reprojection_error: 50  # 最大重投影误差 (像素)
-  min_cameras_for_triangulation: 2  # 三角化最少相机数
-
-# 调试设置
-debug:
-  save_intermediate_results: false  # 保存中间结果用于调试
-  verbose_logging: false  # 详细日志输出
-  visualize_pose_detection: false  # 可视化姿态检测结果
-  export_debug_videos: false  # 导出调试视频
-
-# ==================== 常用配置预设 ====================
-# 你可以通过取消注释来使用这些预设
-
-# 预设1: 高质量处理 (需要强大的GPU)
-# processing:
-#   pose_detector: 'OpenPose'
-#   resolution: '1x1008_4scales'
-#   augmenter_model: 'v0.3'
-#   image_upsample_factor: 8
-
-# 预设2: 快速处理 (适合测试)
-# processing:
-#   pose_detector: 'OpenPose'
-#   resolution: 'default'
-#   augmenter_model: 'v0.2'
-#   image_upsample_factor: 2
-# calibration:
-#   n_images: 20
-
-# 预设3: MMPose处理
-# processing:
-#   pose_detector: 'mmpose'
-#   bbox_threshold: 0.9
-#   augmenter_model: 'v0.3'
+  calibration_videos: ./LocalData/Calibration
+  input_videos: ./LocalData/Videos
+  output: ./LocalData/Results
+output:
+  delete_intermediate: false
+  generate_opensim: true
+  save_videos: true
+processing:
+  augmenter_model: v0.3
+  bbox_threshold: 0.8
+  filter_frequency: default
+  framerate: 30
+  image_upsample_factor: 4
+  pose_detector: OpenPose
+  resolution: 1x736
+  scaling_setup: upright_standing_pose
+session:
+  description: 本地OpenCap会话
+  name: LocalSession_20250907_172019
+  subject_height: 170.0
+  subject_mass: 67.0

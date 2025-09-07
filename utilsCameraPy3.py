@@ -178,7 +178,8 @@ class Camera:
             data['opencv_dist_coeff'] = self.opencv_dist_coeff.tolist()
         else:
             data['kappa'] = self.kappa.tolist()
-        yaml.dump(data, open(filename, 'w'))
+        with open(filename, 'w', encoding='utf-8') as f:
+            yaml.dump(data, f)
 
     def load(self, filename):
         """
@@ -201,7 +202,8 @@ class Camera:
             - [3.431608806127]
             - [17.74182159488]
         """
-        data = yaml.load(open(filename))
+        with open(filename, 'r', encoding='utf-8') as f:
+            data = yaml.load(f, Loader=yaml.FullLoader)
         if 'id' in data:
             self.id = data['id']
         if 'K' in data:

@@ -2,16 +2,16 @@
     "streams": [
         {
             "name": "Camera 1",
-            "rtsp_url": "rtsp://192.168.111.16:8080/h264_ulaw.sdp",
+            "rtsp_url": "rtsp://192.168.2.134:8080/h264_ulaw.sdp",
             "enabled": true
         },
         {
             "name": "Camera 4",
-            "rtsp_url": "rtsp://admin:gr2025@@@192.168.31.100:554/Streaming/Channels/101",
-            "enabled": false
+            "rtsp_url": "rtsp://192.168.2.6:8080/h264_ulaw.sdp",
+            "enabled": true
         }
         
     ],
-    "output_directory": "D:\\video",
+    "output_directory": "e:\\video",
     "segment_time": 60
 }

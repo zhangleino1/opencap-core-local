@@ -29,8 +29,14 @@ from utilsAPI import getAPIURL
 
 from utilsAuth import getToken
 
-API_TOKEN = getToken()
 API_URL = getAPIURL()
+
+def get_api_token():
+    """Get API token when needed, not at import time."""
+    token = getToken()
+    if token is None:
+        raise RuntimeError("API token is not available in local mode. This function should not be called.")
+    return token
 
 # %%
 def download_file(url, file_name):
@@ -201,7 +207,7 @@ def computeAverageIntrinsics(session_path,trialIDs,CheckerBoardParams,nImages=25
     for trial_id in trialIDs:
         resp = makeRequestWithRetry('GET',
                                     API_URL + "trials/{}/".format(trial_id),
-                                    headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                    headers = {"Authorization": "Token {}".format(get_api_token())})
         trial = resp.json()
         camModels.append(trial['videos'][0]['parameters']['model'])
         trial_name = trial['name']
@@ -679,9 +685,8 @@ def autoSelectExtrinsicSolution(sessionDir,keypoints2D,confidence,extrinsicsOpti
     
     # save calibrationJson to Videos
     calibrationOptionsFile = os.path.join(sessionDir,'Videos','calibOptionSelections.json')
-    with open(calibrationOptionsFile, 'w') as f:
+    with open(calibrationOptionsFile, 'w', encoding='utf-8') as f:
         json.dump(optimalCalibrationDict, f)
-    f.close()
     
     # Make camera params dict
     CamParamDict = {}
@@ -1020,12 +1025,14 @@ def synchronizeVideoKeypoints(keypointList, confidenceList,
         keypointsSync = []
         confidenceSync = []
         nansInOutSync = []
+        startEndFrames = []  # 添加缺失的第4个返回值
         for i in range(len(cameras2Use)):
             keypointsSync.insert(i, np.zeros((keypointList[0].shape[0], 10,
                                               keypointList[0].shape[2])))
             confidenceSync.insert(i, np.zeros((keypointList[0].shape[0], 10)))
-            nansInOutSync.insert(i, np.array([np.nan, np.nan]))     
-        return keypointsSync, confidenceSync, nansInOutSync
+            nansInOutSync.insert(i, np.array([np.nan, np.nan]))
+            startEndFrames.insert(i, None)  # 添加对应的值     
+        return keypointsSync, confidenceSync, nansInOutSync, startEndFrames  # 返回4个值保持一致
                 
     [idxStart, idxEnd] = [np.min(overlapInds_clean), np.max(overlapInds_clean)]
     idxEnd += 1 # Python indexing system.
@@ -2891,7 +2898,7 @@ def writeTRCfrom3DKeypoints(keypoints3D, pathOutputFile, keypointNames,
     keypoints3D_res_sel = np.delete(keypoints3D_res, idxToRemove, axis=1)  
     keypointNames_sel = [i for i in keypointNames if i not in faceMarkers]
 
-    with open(pathOutputFile,"w") as f:
+    with open(pathOutputFile,"w", encoding='utf-8') as f:
         numpy2TRC(f, keypoints3D_res_sel, keypointNames_sel, fc=frameRate, 
                   units="m")
     

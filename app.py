@@ -27,9 +27,15 @@ logging.basicConfig(format="[%(asctime)s] [%(levelname)s] %(message)s",
                     datefmt='%Y-%m-%d %H:%M:%S',
                     force=True)
 
-API_TOKEN = getToken()
 API_URL = getAPIURL()
 workerType = getWorkerType()
+
+def get_api_token():
+    """Get API token when needed, not at import time."""
+    token = getToken()
+    if token is None:
+        raise RuntimeError("API token is not available in local mode. This function should not be called.")
+    return token
 autoScalingInstance = getASInstance()
 logging.info(f"AUTOSCALING TEST INSTANCE: {autoScalingInstance}")
 
@@ -81,7 +87,7 @@ while True:
     queue_path = "trials/dequeue/?workerType=" + workerType
     try:
         r = requests.get("{}{}".format(API_URL, queue_path),
-                         headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                         headers = {"Authorization": "Token {}".format(get_api_token())})
     except Exception as e:
         traceback.print_exc()
         time.sleep(15)
@@ -140,7 +146,7 @@ while True:
             r = makeRequestWithRetry('PATCH',
                                     trial_url,
                                     data={"status": "error", "meta": json.dumps(error_msg)},
-                                    headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                    headers = {"Authorization": "Token {}".format(get_api_token())})
             
         except Exception as e:
             traceback.print_exc()
@@ -155,7 +161,7 @@ while True:
     # The following is now done in main, to allow reprocessing trials with missing videos
     # if any([v["video"] is None for v in trial["videos"]]):
     #     r = requests.patch(trial_url, data={"status": "error"},
-    #                 headers = {"Authorization": "Token {}".format(API_TOKEN)})
+    #                 headers = {"Authorization": "Token {}".format(get_api_token())})
     #     continue
 
     trial_type = "dynamic"
@@ -180,7 +186,7 @@ while True:
         r = makeRequestWithRetry('PATCH',
                                  trial_url,
                                  data={"status": "done"},
-                                 headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                 headers = {"Authorization": "Token {}".format(get_api_token())})
 
         logging.info('0.5s pause if need to restart.')
         time.sleep(0.5)
@@ -189,7 +195,7 @@ while True:
         try:
             r = makeRequestWithRetry('PATCH',
                                      trial_url, data={"status": "error"},
-                                     headers = {"Authorization": "Token {}".format(API_TOKEN)})
+                                     headers = {"Authorization": "Token {}".format(get_api_token())})
             traceback.print_exc()
 
             if ERROR_LOG:
