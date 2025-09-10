@@ -628,3 +628,6 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
             settings['verticalOffset'] = vertical_offset_settings 
         with open(pathSettings, 'w', encoding='utf-8') as file:
             yaml.dump(settings, file)
+    
+    # 返回成功状态
+    return True

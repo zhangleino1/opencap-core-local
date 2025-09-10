@@ -1,0 +1,39 @@
+calibration:
+  checkerboard:
+    dimensions:
+    - 5
+    - 4
+    square_size: 35
+  deployed_folders:
+  - Deployed_720_60fps
+  - Deployed
+  n_images: 50
+directories:
+  calibration_videos: ./LocalData/Calibration
+  input_videos: ./LocalData/Videos
+  output: ./LocalData/Results
+  static_videos: ./LocalData/Static
+output:
+  delete_intermediate: false
+  generate_opensim: true
+  save_videos: true
+processing:
+  augmenter_model: v0.3
+  bbox_threshold: 0.8
+  filter_frequency: default
+  framerate: 30
+  image_upsample_factor: 4
+  pose_detector: OpenPose
+  resolution: 1x736
+  scaling_setup: upright_standing_pose
+session:
+  description: 本地OpenCap会话
+  name: session_20250910_235834
+  subject_height: 170.0
+  subject_mass: 67.0
+static:
+  pose_duration: 3.0
+  required: false
+  save_neutral_images: true
+  save_pose_data: true
+  save_scaled_model: true
