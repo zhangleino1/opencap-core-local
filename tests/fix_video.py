@@ -24,14 +24,19 @@ def fix_video_with_ffmpeg(input_path, output_path=None):
         print(f"[错误] 输入文件不存在: {input_path}")
         return False
     
-    # 构建ffmpeg命令 - 无损修复，保持原始质量
+    # 构建ffmpeg命令 - 修复损坏的视频文件
     # -err_detect ignore_err: 忽略错误继续处理
-    # -c copy: 复制流不重新编码，保持原始质量
+    # -c:v libx264: 重新编码视频流修复损坏
+    # -c:a aac: 重新编码音频流
+    # -crf 18: 高质量编码
     cmd = [
         'ffmpeg',
-        '-i', input_path,
         '-err_detect', 'ignore_err',
-        '-c', 'copy',  # 复制流，不重新编码
+        '-i', input_path,
+        '-c:v', 'libx264',  # 重新编码视频修复损坏
+        '-crf', '18',       # 高质量编码
+        '-c:a', 'aac',      # 重新编码音频
+        '-movflags', '+faststart',  # 优化文件结构
         '-y',  # 覆盖输出文件
         output_path
     ]
