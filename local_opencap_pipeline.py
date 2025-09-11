@@ -385,18 +385,12 @@ class LocalOpenCapPipeline:
         params = {}
         
         if pose_detector.lower() == 'openpose':
-            if 'openpose' in self.default_settings:
-                params['resolutionPoseDetection'] = self.default_settings['openpose']
-            else:
-                params['resolutionPoseDetection'] = '1x736'  # 默认值
+            params['resolutionPoseDetection'] = self.config['processing']['resolution']
                 
-        elif pose_detector.lower() == 'hrnet':
-            if 'hrnet' in self.default_settings:
-                params['bbox_thr'] = self.default_settings['hrnet']
-            else:
-                params['bbox_thr'] = 0.8  # 默认值
+        elif pose_detector.lower() == 'mmpose':
+            params['bbox_thr'] = self.config['processing']['bbox_threshold']
         
-        logger.info(f"应用 {pose_detector} 默认设置: {params}")
+        logger.info(f"应用 {pose_detector} 设置: {params}")
         return params
     
     def setup_from_videos(self, videos, trial_name, trial_type='dynamic', extrinsicsTrial=False, **kwargs):

@@ -248,8 +248,51 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                 # webapp will give you the opportunity to compute them.
                 
                 else:
-                    exception = "Intrinsics don't exist for your camera model. OpenCap supports all iOS devices released in 2018 or later: https://www.opencap.ai/get-started."
-                    raise Exception(exception, exception)
+                    # 对于本地处理，如果是通用摄像头且没有预计算的内参，
+                    # 尝试从当前标定视频计算内参
+                    if 'GenericCamera' in cameraModels[camName] and extrinsicsTrial:
+                        logging.info(f"为通用摄像头 {camName} 计算内参...")
+                        try:
+                            # 导入本地内参计算函数
+                            from main_calcIntrinsics_local import calibrateCameraFromVideo
+                            
+                            # 从当前标定视频计算内参
+                            pathVideoWithoutExtension = os.path.join(
+                                camDir, 'InputMedia', trialName, trial_id)
+                            extension = getVideoExtension(pathVideoWithoutExtension)
+                            calibrationVideoPath = pathVideoWithoutExtension + extension
+                            
+                            if os.path.exists(calibrationVideoPath):
+                                # 使用默认图像数量25进行标定
+                                intrinsic_data = calibrateCameraFromVideo(
+                                    calibrationVideoPath, CheckerBoardParams, 25)
+                                if intrinsic_data is None:
+                                    raise Exception(f"从视频计算内参失败: {calibrationVideoPath}")
+                                
+                                # 创建兼容的内参字典格式（与现有函数兼容）
+                                CamParams = {
+                                    'intrinsicMat': intrinsic_data['intrinsicMat'],
+                                    'distortion': intrinsic_data['distortion'],
+                                    'imageSize': intrinsic_data['imageSize']
+                                }
+                                logging.info(f"成功为 {camName} 计算内参")
+                            else:
+                                raise Exception(f"标定视频不存在: {calibrationVideoPath}")
+                                
+                        except ImportError:
+                            exception = "无法导入本地内参计算模块。请确保 main_calcIntrinsics_local.py 存在。"
+                            raise Exception(exception, exception)
+                        except Exception as e:
+                            exception = f"为通用摄像头计算内参失败: {str(e)}"
+                            raise Exception(exception, exception)
+                    else:
+                        # 对于非标定试验，如果是通用摄像头且没有内参，提供更明确的错误信息
+                        if 'GenericCamera' in cameraModels[camName]:
+                            exception = f"通用摄像头 {camName} 缺少内参数据。请先运行标定试验以计算内参，或手动提供内参文件。"
+                            raise Exception(exception, exception)
+                        else:
+                            exception = "Intrinsics don't exist for your camera model. OpenCap supports all iOS devices released in 2018 or later: https://www.opencap.ai/get-started."
+                            raise Exception(exception, exception)
                         
                 # Extrinsics ##################################################
                 # Compute extrinsics from images popped out of this trial.
@@ -448,7 +491,7 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
         if keypoints3D.shape[2] < 10:
             e1 = 'Error - less than 10 good frames of triangulated data.'
             raise Exception(e1,e1)
-    
+        
         # Write TRC.
         writeTRCfrom3DKeypoints(keypoints3D, pathOutputFiles[trialName],
                                 keypointNames, frameRate=frameRate, 

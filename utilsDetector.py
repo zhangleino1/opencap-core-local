@@ -180,9 +180,9 @@ def runOpenPoseCMD(pathOpenPose, resolutionPoseDetection, cameraDirectory,
             cmd_hr = ' --net_resolution "-1x736" '  
     elif resolutionPoseDetection == '1x736_2scales':
         if horizontal:
-            cmd_hr = ' --net_resolution "-1x736" --scale_number 2 --scale_gap 0.75 '
-        else:
             cmd_hr = ' --net_resolution "736x-1" --scale_number 2 --scale_gap 0.75 '
+        else:
+            cmd_hr = ' --net_resolution "-1x736" --scale_number 2 --scale_gap 0.75 '
         
     if config("DOCKERCOMPOSE", cast=bool, default=False):
         vid_path_tmp = "/data/tmp-video.mov"
@@ -230,11 +230,13 @@ def runOpenPoseCMD(pathOpenPose, resolutionPoseDetection, cameraDirectory,
         pathVideoOut = os.path.join(pathOutputVideo,
                                     trialPrefix + 'withKeypoints.avi')
         if not generateVideo:
-            command = ('bin\OpenPoseDemo.exe --video {} --write_json {} --render_threshold 0.5 --display 0 --render_pose 0{}'.format(
+            command = ('bin\OpenPoseDemo.exe --video {} --write_json {} --render_threshold 0.01 --number_people_max 1 --display 1 --render_pose 0{}'.format(
                 videoFullPath, pathOutputJsons, cmd_hr))
         else:
-            command = ('bin\OpenPoseDemo.exe --video {} --write_json {} --render_threshold 0.5 --display 0{}--write_video {}'.format(
+            command = ('bin\OpenPoseDemo.exe --video {} --write_json {} --render_threshold 0.01 --number_people_max 1 --display 1{}--write_video {}'.format(
                 videoFullPath, pathOutputJsons, cmd_hr, pathVideoOut))
+            
+        print('Running command: {}'.format(command))
 
     if command:
         os.system(command)

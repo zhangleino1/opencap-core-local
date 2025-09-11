@@ -995,13 +995,22 @@ def synchronizeVideoKeypoints(keypointList, confidenceList,
     # Find indices with high confidence that overlap between cameras.    
     # Note: Could get creative and do camera pair syncing in the future, based
     # on cameras with greatest amount of overlapping confidence.
+    print("🔄 开始基于关键点置信度的相机同步...")
     overlapInds_clean, minConfLength_all = findOverlap(confidenceList,
                                                    markers4VertVel)
+    
+    if np.any(overlapInds_clean):
+        print(f"✅ 成功找到 {len(overlapInds_clean.flatten())} 个高置信度重叠帧")
+    else:
+        print("⚠️  未找到基于置信度的重叠帧，可能原因:")
+        print("   - 姿态检测质量不佳")
+        print("   - 相机间时间同步偏差过大")
+        print("   - 被试在某些相机视野中不可见")
     
     # If no overlap found, try with fewer cameras.
     c_nCams = len(confidenceList)
     while not np.any(overlapInds_clean) and c_nCams>2:
-        print("Could not find overlap with {} cameras - trying with {} cameras".format(c_nCams, c_nCams-1))
+        print(f"🔄 无法用 {c_nCams} 个相机找到重叠 - 尝试用 {c_nCams-1} 个相机")
         cam_list = [i for i in range(nCams)]
         # All possible combination with c_nCams-1 cameras.
         from itertools import combinations
@@ -1077,20 +1086,24 @@ def synchronizeVideoKeypoints(keypointList, confidenceList,
     # trial to be considered a gait trial.
     try:
         isGait = detectGaitAllVideos(mkrSpeedList,allMarkerList,confSyncList,markers4Ankles,sampleFreq)
-    except:
+        print(f"🚶 步态检测结果: {'是步态运动' if isGait else '非步态运动'}")
+    except Exception as e:
         isGait = False
-        print('Detect gait activity algorithm failed.')
+        print(f'❌ 步态检测算法失败: {str(e)}')
     
     # Detect activity, which determines sync function that gets used
     isHandPunch,handForPunch = detectHandPunchAllVideos(handPunchVertPositionList,sampleFreq)
     if isHandPunch:
         syncActivity = 'handPunch'
+        print('🥊 检测到手部击打动作 - 使用手部击打同步算法')
     elif isGait:
         syncActivity = 'gait'
+        print('🚶 检测到步态运动 - 使用步态专用同步算法')
     else:
         syncActivity = 'general'
+        print('📷 使用通用同步算法')
         
-    print('Using ' + syncActivity + ' sync function.')
+    print(f'🎯 最终选择: {syncActivity} 同步功能')
     
     
     # Select filtering frequency based on if it is gait
@@ -2922,8 +2935,43 @@ def findOverlap(confidenceList, markers4VertVel):
         np.mean(cMat[markers4VertVel,:],axis=0) for cMat in c_confidenceList]
     minConfLength = np.min(np.array([len(x) for x in confMean]))
     confArray = np.array([x[0:minConfLength] for x in confMean])
+    
+    # 添加调试信息：检查置信度数组状态
+    print(f"同步分析 - 相机数量: {len(c_confidenceList)}")
+    print(f"同步分析 - 关键点数量: {len(markers4VertVel)}")
+    print(f"同步分析 - 最小置信度长度: {minConfLength}")
+    
+    # 检查每个相机的置信度统计
+    for i, confMat in enumerate(c_confidenceList):
+        valid_conf = confMat[markers4VertVel, :][~np.isnan(confMat[markers4VertVel, :])]
+        nan_ratio = np.sum(np.isnan(confMat[markers4VertVel, :])) / confMat[markers4VertVel, :].size
+        avg_conf = np.mean(valid_conf) if len(valid_conf) > 0 else 0
+        avg_conf_str = f"{avg_conf:.3f}" if len(valid_conf) > 0 else "N/A"
+        print(f"相机 {i+1}: 有效置信度数量={len(valid_conf)}, NaN比例={nan_ratio:.2f}, 平均置信度={avg_conf_str}")
+    
+    # 检查confArray是否全为NaN
+    if np.all(np.isnan(confArray)):
+        print("❌ 警告: 所有置信度值都是NaN，这通常表示:")
+        print("  1. 姿态检测在所有相机中都失败")
+        print("  2. 选择的关键点标记(markers4VertVel)在数据中不存在")
+        print("  3. 视频质量或光照条件不佳")
+        print("  4. 相机标定存在问题")
+        print(f"  当前使用的关键点标记索引: {markers4VertVel}")
+        return np.array([]), 0, 0
+    
     minConfidence = np.nanmin(confArray,axis=0)
+    
+    # 检查计算结果
+    valid_min_conf = minConfidence[~np.isnan(minConfidence)]
+    if len(valid_min_conf) == 0:
+        print("❌ 错误: 无法计算有效的最小置信度")
+        print("  建议检查姿态检测结果和相机同步")
+        return np.array([]), 0, 0
+    
     confThresh = .5*np.nanmax(minConfidence)
+    print(f"置信度阈值: {confThresh:.3f} (最大置信度的50%)")
+    print(f"有效置信度范围: {np.nanmin(minConfidence):.3f} - {np.nanmax(minConfidence):.3f}")
+    
     overlapInds = np.asarray(np.where(minConfidence>confThresh))
     
     # Find longest stretch of high confidence.
