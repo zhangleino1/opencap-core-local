@@ -406,6 +406,9 @@ class LocalOpenCapPipeline:
         print("\n" + "="*60)
         print("🎯 标定方案选择")
         print("="*60)
+        print("⚠️  重要提示：此选择将保存并用于后续所有试验（静态、动态）")
+        print("    一旦选择完成，后续试验将自动使用保存的方案，无需再次选择")
+        print("="*60)
 
         # 查找标定图像
         cal_image_dir = os.path.join(self.session_dir, 'CalibrationImages')
@@ -619,6 +622,14 @@ class LocalOpenCapPipeline:
                         logger.info(f"🔄 {cam_name}: 恢复方案{solution_num}")
                     else:
                         logger.warning(f"⚠️ {cam_name}: 方案{solution_num}文件不存在")
+                else:
+                    logger.warning(f"⚠️ {cam_name}: 未在保存的选择中找到，将使用默认方案0")
+                    # 为缺失的摄像头使用默认方案
+                    source_file = os.path.join(cam_dir, 'InputMedia', 'calibration', 'cameraIntrinsicsExtrinsics_soln0.pickle')
+                    target_file = os.path.join(cam_dir, 'cameraIntrinsicsExtrinsics.pickle')
+                    if os.path.exists(source_file):
+                        shutil.copy2(source_file, target_file)
+                        logger.info(f"🔄 {cam_name}: 使用默认方案0")
         else:
             logger.info("ℹ️ 未找到之前的标定方案选择记录")
 
@@ -973,16 +984,24 @@ class LocalOpenCapPipeline:
             # 应用姿态检测器设置
             pose_params = self._apply_pose_detector_settings(self.config['processing']['pose_detector'])
             
-            # 处理标定方案选择
+            # 处理标定方案选择 - 静态试验不再需要交互式选择
             alternate_extrinsics = None
             if 'alternate_extrinsics' in self.config.get('calibration', {}):
                 alternate_extrinsics = self.config['calibration']['alternate_extrinsics']
                 logger.info(f"使用配置文件指定的备选标定方案: {alternate_extrinsics}")
-            elif self.config.get('calibration', {}).get('interactive_selection', False):
-                # 交互式选择标定方案
-                alternate_extrinsics = self._interactive_calibration_selection()
-                if alternate_extrinsics:
-                    logger.info(f"用户选择的备选标定方案: {alternate_extrinsics}")
+            else:
+                # 静态试验使用已保存的标定方案选择，不再进行交互式选择
+                saved_selection = self._load_calibration_selection()
+                if saved_selection:
+                    # 根据保存的选择确定需要使用备选方案的摄像头
+                    alternate_cams = [cam for cam, solution in saved_selection.items() if solution == 1]
+                    if alternate_cams:
+                        alternate_extrinsics = alternate_cams
+                        logger.info(f"使用已保存的备选标定方案: {alternate_extrinsics}")
+                    else:
+                        logger.info("使用已保存的标定方案选择: 所有摄像头使用默认方案")
+                else:
+                    logger.warning("未找到保存的标定方案选择，将使用默认方案")
 
             main_args.update({
                 'extrinsicsTrial': False,
@@ -1032,6 +1051,15 @@ class LocalOpenCapPipeline:
                         if alternate_cams:
                             self._apply_calibration_selection(alternate_cams)
                             logger.info(f"✅ 已应用用户选择的标定方案: {alternate_cams}")
+                        else:
+                            # 即使用户选择了全部默认方案，也要保存选择记录
+                            logger.info("✅ 用户选择使用所有默认标定方案")
+                            default_selection = {}
+                            cam_dirs = glob.glob(os.path.join(self.session_dir, 'Videos', 'Cam*'))
+                            for cam_dir in cam_dirs:
+                                cam_name = os.path.basename(cam_dir)
+                                default_selection[cam_name] = 0  # 默认方案
+                            self._save_calibration_selection(default_selection)
 
                 return True
             else:

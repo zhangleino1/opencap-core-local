@@ -8,6 +8,18 @@ calibration:
   - Deployed_720_60fps
   - Deployed
   n_images: 50
+  # 启用交互式标定方案选择 - 重要：确保Z轴指向标定板内部
+  # 注意：只在标定试验时选择一次，后续静态和动态试验会自动使用保存的选择
+  interactive_selection: true
+  # 标定方案选择 (针对每个摄像头，指定使用方案0还是方案1)
+  # 格式: 摄像头名称: 方案编号 (0或1)
+  # 如果不指定，默认使用方案0
+  # 重要：根据OpenCap最佳实践，选择使Z轴(深蓝色箭头)指向标定板内部的方案
+  # 注意：如果启用了interactive_selection，此设置将被忽略，由用户交互式选择
+  extrinsic_solutions:
+    # Cam1: 0  # 使用方案0 (默认)
+    # Cam2: 1  # 使用方案1 (备选) - 如果默认方案的Z轴方向错误
+    # 注释掉表示使用默认方案0kerboard:
 directories:
   calibration_videos: ./LocalData/Calibration
   input_videos: ./LocalData/Videos
