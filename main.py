@@ -357,19 +357,30 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
         # Get rotation angles from motion capture environment to OpenSim.
         # Space-fixed are lowercase, Body-fixed are uppercase. 
         checkerBoardMount = sessionMetadata['checkerBoard']['placement']
+        logging.info(f"🎯 棋盘格放置方式: {checkerBoardMount}")
+
         if checkerBoardMount == 'backWall' or checkerBoardMount == 'Perpendicular':
-            # Detect if checkerboard is upside down.
+            # 改进的棋盘格倒置检测
+            logging.info("🔍 背墙放置模式，开始检测棋盘格朝向...")
             upsideDownChecker = isCheckerboardUpsideDown(CamParamDict)
+
             if upsideDownChecker:
                 rotationAngles = {'y':-90}
+                logging.info("🔄 应用倒置补偿旋转: Y轴-90°")
             else:
                 rotationAngles = {'y':90, 'z':180}
         elif checkerBoardMount == 'ground' or checkerBoardMount == 'Lying':
             rotationAngles = {'x':90, 'y':90}
+            logging.info("🔄 地面放置模式，应用旋转: X轴90°, Y轴90°")
         else:
             raise Exception('checkerBoard placement value in\
              sessionMetadata.yaml is not currently supported')
-             
+
+        # 总结旋转设置
+        logging.info("📐 坐标系转换设置完成:")
+        logging.info(f"   最终旋转角度: {rotationAngles}")
+        logging.info("   这些角度将用于从运动捕获坐标系转换到OpenSim坐标系")
+
         # Detect all available cameras (ie, cameras with existing videos).
         cameras_available = []
         for camName in cameraDirectories:

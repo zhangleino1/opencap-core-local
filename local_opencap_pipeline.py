@@ -392,7 +392,449 @@ class LocalOpenCapPipeline:
         
         logger.info(f"应用 {pose_detector} 设置: {params}")
         return params
-    
+
+    def _interactive_calibration_selection(self):
+        """
+        交互式选择标定方案
+
+        Returns:
+            list: 需要使用备选方案的摄像头列表
+        """
+        import subprocess
+        import platform
+
+        print("\n" + "="*60)
+        print("🎯 标定方案选择")
+        print("="*60)
+
+        # 查找标定图像
+        cal_image_dir = os.path.join(self.session_dir, 'CalibrationImages')
+        if not os.path.exists(cal_image_dir):
+            logger.warning("未找到标定图像目录，跳过交互式选择")
+            return None
+
+        cam_dirs = glob.glob(os.path.join(self.session_dir, 'Videos', 'Cam*'))
+        alternate_cams = []
+
+        for cam_dir in cam_dirs:
+            cam_name = os.path.basename(cam_dir)
+
+            # 查找标定方案图像
+            solution1_img = os.path.join(cal_image_dir, f'extrinsicCalib_{cam_name}.jpg')
+            solution2_img = os.path.join(cal_image_dir, f'extrinsicCalib_altSoln_{cam_name}.jpg')
+
+            if os.path.exists(solution1_img) and os.path.exists(solution2_img):
+                print(f"\n📷 {cam_name} 标定方案选择:")
+                print(f"   方案0 (默认): {solution1_img}")
+                print(f"   方案1 (备选): {solution2_img}")
+
+                # 尝试自动打开图像供用户查看
+                try:
+                    if platform.system() == 'Windows':
+                        subprocess.run(['start', solution1_img], shell=True, check=False)
+                        subprocess.run(['start', solution2_img], shell=True, check=False)
+                    elif platform.system() == 'Darwin':  # macOS
+                        subprocess.run(['open', solution1_img], check=False)
+                        subprocess.run(['open', solution2_img], check=False)
+                    elif platform.system() == 'Linux':
+                        subprocess.run(['xdg-open', solution1_img], check=False)
+                except:
+                    pass
+
+                print("\n请查看两个标定方案图像:")
+                print("- 方案0: 默认标定方案 (对应上面的第一个图像)")
+                print("- 方案1: 备选标定方案 (对应上面的第二个图像)")
+                print("\n正确的标定方案应该：")
+                print("✅ Z轴(深蓝色箭头)垂直指向标定板平面 (dark blue axis pointing into the board)")
+                print("✅ X轴(红色箭头)和Y轴(绿色箭头)平行于标定板平面")
+                print("✅ 坐标轴清晰可见，没有明显的几何扭曲")
+                print("❌ 如果Z轴指向相反方向，应选择备选方案")
+
+                while True:
+                    choice = input(f"\n请选择 {cam_name} 的标定方案 (0: 默认/1: 备选): ").strip()
+                    if choice == '0':
+                        print(f"✅ {cam_name} 使用方案0 (默认)")
+                        break
+                    elif choice == '1':
+                        print(f"✅ {cam_name} 使用方案1 (备选)")
+                        alternate_cams.append(cam_name)
+                        break
+                    else:
+                        print("❌ 请输入 0 或 1")
+            else:
+                logger.warning(f"未找到 {cam_name} 的标定方案图像，使用默认方案")
+
+        print("\n" + "="*60)
+        if alternate_cams:
+            print(f"📋 最终选择: {alternate_cams} 使用备选标定方案")
+        else:
+            print("📋 所有摄像头使用默认标定方案")
+        print("="*60 + "\n")
+
+        return alternate_cams if alternate_cams else None
+
+    def _apply_calibration_selection(self, alternate_cams):
+        """
+        应用用户的标定方案选择
+
+        Args:
+            alternate_cams: 需要使用备选方案的摄像头列表
+        """
+        import shutil
+
+        logger.info(f"🔄 应用标定方案选择: {alternate_cams}")
+
+        cam_dirs = glob.glob(os.path.join(self.session_dir, 'Videos', 'Cam*'))
+
+        # 创建方案选择记录
+        calibration_selection = {}
+
+        for cam_dir in cam_dirs:
+            cam_name = os.path.basename(cam_dir)
+
+            # 确定使用哪个方案
+            if cam_name in alternate_cams:
+                # 使用方案1 (备选方案)
+                source_file = os.path.join(cam_dir, 'InputMedia', 'calibration', 'cameraIntrinsicsExtrinsics_soln1.pickle')
+                solution_num = 1
+                logger.info(f"📷 {cam_name}: 选择方案1 (备选)")
+            else:
+                # 使用方案0 (默认方案)
+                source_file = os.path.join(cam_dir, 'InputMedia', 'calibration', 'cameraIntrinsicsExtrinsics_soln0.pickle')
+                solution_num = 0
+                logger.info(f"📷 {cam_name}: 选择方案0 (默认)")
+
+            # 记录选择
+            calibration_selection[cam_name] = solution_num
+
+            # 目标文件
+            target_file = os.path.join(cam_dir, 'cameraIntrinsicsExtrinsics.pickle')
+
+            # 检查源文件是否存在
+            if os.path.exists(source_file):
+                # 复制选择的方案到最终文件
+                shutil.copy2(source_file, target_file)
+                logger.info(f"✅ {cam_name}: 已应用选择的方案")
+
+                # 验证复制是否成功
+                if os.path.exists(target_file):
+                    source_size = os.path.getsize(source_file)
+                    target_size = os.path.getsize(target_file)
+                    if source_size == target_size:
+                        logger.info(f"   文件大小验证通过: {target_size} bytes")
+                    else:
+                        logger.warning(f"   文件大小不匹配: 源文件{source_size}, 目标文件{target_size}")
+                else:
+                    logger.error(f"❌ {cam_name}: 复制失败，目标文件不存在")
+            else:
+                logger.error(f"❌ {cam_name}: 源文件不存在: {source_file}")
+
+        # 保存选择记录到会话目录，供后续试验使用
+        self._save_calibration_selection(calibration_selection)
+
+    def _save_calibration_selection(self, calibration_selection):
+        """
+        保存标定方案选择记录
+        
+        Args:
+            calibration_selection: 摄像头方案选择字典 {"Cam1": 0, "Cam2": 1}
+        """
+        selection_file = os.path.join(self.session_dir, 'calibration_selection.yaml')
+        
+        selection_data = {
+            'selection_time': datetime.now().isoformat(),
+            'camera_solutions': calibration_selection,
+            'description': '用户选择的标定方案记录，用于确保后续试验使用一致的内外参'
+        }
+        
+        with open(selection_file, 'w', encoding='utf-8') as f:
+            yaml.dump(selection_data, f, default_flow_style=False, allow_unicode=True)
+        
+        logger.info(f"📋 标定方案选择已保存: {selection_file}")
+        logger.info(f"   选择记录: {calibration_selection}")
+
+    def _load_calibration_selection(self):
+        """
+        读取之前保存的标定方案选择
+        
+        Returns:
+            dict: 摄像头方案选择字典 {"Cam1": 0, "Cam2": 1}，如果没有则返回None
+        """
+        selection_file = os.path.join(self.session_dir, 'calibration_selection.yaml')
+        
+        if os.path.exists(selection_file):
+            try:
+                with open(selection_file, 'r', encoding='utf-8') as f:
+                    selection_data = yaml.safe_load(f)
+                
+                camera_solutions = selection_data.get('camera_solutions', {})
+                logger.info(f"📋 读取到之前的标定方案选择: {camera_solutions}")
+                return camera_solutions
+            except Exception as e:
+                logger.warning(f"读取标定方案选择文件失败: {str(e)}")
+                return None
+        else:
+            return None
+
+    def _ensure_calibration_consistency(self):
+        """
+        确保使用一致的标定方案 - 在每次处理试验前调用
+        """
+        # 读取之前保存的选择
+        saved_selection = self._load_calibration_selection()
+        
+        if saved_selection:
+            logger.info("🔒 检测到之前的标定方案选择，确保一致性...")
+            
+            cam_dirs = glob.glob(os.path.join(self.session_dir, 'Videos', 'Cam*'))
+            
+            for cam_dir in cam_dirs:
+                cam_name = os.path.basename(cam_dir)
+                
+                if cam_name in saved_selection:
+                    solution_num = saved_selection[cam_name]
+                    
+                    # 源文件和目标文件
+                    source_file = os.path.join(cam_dir, 'InputMedia', 'calibration', f'cameraIntrinsicsExtrinsics_soln{solution_num}.pickle')
+                    target_file = os.path.join(cam_dir, 'cameraIntrinsicsExtrinsics.pickle')
+                    
+                    # 检查是否需要更新
+                    if os.path.exists(source_file) and os.path.exists(target_file):
+                        # 比较文件内容是否一致
+                        import hashlib
+                        with open(source_file, 'rb') as f:
+                            source_hash = hashlib.md5(f.read()).hexdigest()
+                        with open(target_file, 'rb') as f:
+                            target_hash = hashlib.md5(f.read()).hexdigest()
+                        
+                        if source_hash != target_hash:
+                            # 需要更新
+                            shutil.copy2(source_file, target_file)
+                            logger.info(f"🔄 {cam_name}: 已恢复为方案{solution_num}，确保一致性")
+                        else:
+                            logger.info(f"✅ {cam_name}: 方案{solution_num}一致性检查通过")
+                    elif os.path.exists(source_file):
+                        # 目标文件不存在，直接复制
+                        shutil.copy2(source_file, target_file)
+                        logger.info(f"🔄 {cam_name}: 恢复方案{solution_num}")
+                    else:
+                        logger.warning(f"⚠️ {cam_name}: 方案{solution_num}文件不存在")
+        else:
+            logger.info("ℹ️ 未找到之前的标定方案选择记录")
+
+    @staticmethod
+    def apply_calibration_selection_to_session(session_path, camera_solution_map=None):
+        """
+        对现有会话应用标定方案选择的独立工具函数
+
+        Args:
+            session_path: 会话目录路径 (如: "Data/session_20250917_140441")
+            camera_solution_map: 摄像头方案映射 (如: {"Cam1": 0, "Cam2": 1})
+
+        Returns:
+            bool: 是否成功应用选择
+        """
+        import shutil
+        import hashlib
+
+        logger.info(f"🔧 对现有会话应用标定方案选择: {session_path}")
+
+        if not os.path.exists(session_path):
+            logger.error(f"❌ 会话目录不存在: {session_path}")
+            return False
+
+        # 交互式选择方案（如果未指定映射）
+        if camera_solution_map is None:
+            camera_solution_map = LocalOpenCapPipeline._interactive_select_for_existing_session(session_path)
+
+        if not camera_solution_map:
+            logger.info("用户取消选择或无需更改")
+            return True
+
+        success_count = 0
+        cam_dirs = glob.glob(os.path.join(session_path, 'Videos', 'Cam*'))
+
+        for cam_dir in cam_dirs:
+            cam_name = os.path.basename(cam_dir)
+
+            if cam_name not in camera_solution_map:
+                logger.info(f"📷 {cam_name}: 保持当前设置")
+                continue
+
+            solution_num = camera_solution_map[cam_name]
+            if solution_num not in [0, 1]:
+                logger.error(f"❌ {cam_name}: 无效的方案编号 {solution_num}")
+                continue
+
+            # 源文件和目标文件路径
+            source_file = os.path.join(cam_dir, 'InputMedia', 'calibration', f'cameraIntrinsicsExtrinsics_soln{solution_num}.pickle')
+            target_file = os.path.join(cam_dir, 'cameraIntrinsicsExtrinsics.pickle')
+
+            if not os.path.exists(source_file):
+                logger.error(f"❌ {cam_name}: 源文件不存在: {source_file}")
+                continue
+
+            try:
+                # 检查是否需要更新（避免不必要的复制）
+                if os.path.exists(target_file):
+                    # 计算文件哈希值
+                    with open(source_file, 'rb') as f:
+                        source_hash = hashlib.md5(f.read()).hexdigest()
+                    with open(target_file, 'rb') as f:
+                        target_hash = hashlib.md5(f.read()).hexdigest()
+
+                    if source_hash == target_hash:
+                        logger.info(f"📷 {cam_name}: 方案{solution_num} 已是当前使用的方案")
+                        success_count += 1
+                        continue
+
+                # 备份当前文件
+                backup_file = target_file + '.backup'
+                if os.path.exists(target_file):
+                    shutil.copy2(target_file, backup_file)
+                    logger.info(f"📷 {cam_name}: 已备份当前文件")
+
+                # 应用新的方案
+                shutil.copy2(source_file, target_file)
+                logger.info(f"✅ {cam_name}: 已切换到方案{solution_num}")
+
+                # 验证复制结果
+                if os.path.exists(target_file):
+                    source_size = os.path.getsize(source_file)
+                    target_size = os.path.getsize(target_file)
+                    if source_size == target_size:
+                        logger.info(f"   文件验证通过: {target_size} bytes")
+                        success_count += 1
+
+                        # 删除备份文件（成功后）
+                        if os.path.exists(backup_file):
+                            os.remove(backup_file)
+                    else:
+                        logger.error(f"❌ {cam_name}: 文件大小验证失败")
+                        # 恢复备份
+                        if os.path.exists(backup_file):
+                            shutil.copy2(backup_file, target_file)
+                            logger.info(f"已恢复备份文件")
+
+            except Exception as e:
+                logger.error(f"❌ {cam_name}: 应用方案{solution_num}时出错: {str(e)}")
+                # 恢复备份
+                backup_file = target_file + '.backup'
+                if os.path.exists(backup_file):
+                    try:
+                        shutil.copy2(backup_file, target_file)
+                        logger.info(f"已恢复备份文件")
+                    except:
+                        pass
+
+        logger.info(f"🎯 标定方案应用完成: {success_count}/{len(camera_solution_map)} 个摄像头成功")
+        return success_count == len(camera_solution_map)
+
+    @staticmethod
+    def _interactive_select_for_existing_session(session_path):
+        """
+        对现有会话进行交互式标定方案选择
+
+        Args:
+            session_path: 会话目录路径
+
+        Returns:
+            dict: 摄像头方案映射 (如: {"Cam1": 0, "Cam2": 1})
+        """
+        import subprocess
+        import platform
+
+        print("\n" + "="*60)
+        print("🔧 现有会话标定方案调整")
+        print("="*60)
+
+        # 查找标定图像
+        cal_image_dir = os.path.join(session_path, 'CalibrationImages')
+        cam_dirs = glob.glob(os.path.join(session_path, 'Videos', 'Cam*'))
+        camera_solution_map = {}
+
+        for cam_dir in cam_dirs:
+            cam_name = os.path.basename(cam_dir)
+
+            # 检查方案文件是否存在
+            soln0_file = os.path.join(cam_dir, 'InputMedia', 'calibration', 'cameraIntrinsicsExtrinsics_soln0.pickle')
+            soln1_file = os.path.join(cam_dir, 'InputMedia', 'calibration', 'cameraIntrinsicsExtrinsics_soln1.pickle')
+            current_file = os.path.join(cam_dir, 'cameraIntrinsicsExtrinsics.pickle')
+
+            if not (os.path.exists(soln0_file) and os.path.exists(soln1_file)):
+                logger.warning(f"{cam_name}: 未找到完整的方案文件，跳过")
+                continue
+
+            # 检查当前使用的方案
+            import hashlib
+            current_solution = None
+            if os.path.exists(current_file):
+                with open(current_file, 'rb') as f:
+                    current_hash = hashlib.md5(f.read()).hexdigest()
+                with open(soln0_file, 'rb') as f:
+                    soln0_hash = hashlib.md5(f.read()).hexdigest()
+                with open(soln1_file, 'rb') as f:
+                    soln1_hash = hashlib.md5(f.read()).hexdigest()
+
+                if current_hash == soln0_hash:
+                    current_solution = 0
+                elif current_hash == soln1_hash:
+                    current_solution = 1
+
+            # 查找标定方案图像
+            solution1_img = os.path.join(cal_image_dir, f'extrinsicCalib_{cam_name}.jpg') if os.path.exists(cal_image_dir) else None
+            solution2_img = os.path.join(cal_image_dir, f'extrinsicCalib_altSoln_{cam_name}.jpg') if os.path.exists(cal_image_dir) else None
+
+            print(f"\n📷 {cam_name} 标定方案:")
+            if current_solution is not None:
+                print(f"   当前使用: 方案{current_solution}")
+            else:
+                print(f"   当前使用: 未知")
+
+            if solution1_img and os.path.exists(solution1_img):
+                print(f"   方案0图像: {solution1_img}")
+            if solution2_img and os.path.exists(solution2_img):
+                print(f"   方案1图像: {solution2_img}")
+
+            # 尝试自动打开图像
+            if solution1_img and solution2_img and os.path.exists(solution1_img) and os.path.exists(solution2_img):
+                try:
+                    if platform.system() == 'Windows':
+                        subprocess.run(['start', solution1_img], shell=True, check=False)
+                        subprocess.run(['start', solution2_img], shell=True, check=False)
+                except:
+                    pass
+
+            print("\n选项:")
+            print("  0 - 使用方案0 (默认)")
+            print("  1 - 使用方案1 (备选)")
+            print("  s - 跳过 (保持当前)")
+
+            while True:
+                choice = input(f"\n请选择 {cam_name} 的方案 (0/1/s): ").strip().lower()
+                if choice == '0':
+                    camera_solution_map[cam_name] = 0
+                    print(f"✅ {cam_name} 将使用方案0")
+                    break
+                elif choice == '1':
+                    camera_solution_map[cam_name] = 1
+                    print(f"✅ {cam_name} 将使用方案1")
+                    break
+                elif choice == 's':
+                    print(f"⏭️ {cam_name} 保持当前设置")
+                    break
+                else:
+                    print("❌ 请输入 0, 1 或 s")
+
+        print("\n" + "="*60)
+        if camera_solution_map:
+            print(f"📋 将要应用的更改: {camera_solution_map}")
+        else:
+            print("📋 无更改需要应用")
+        print("="*60 + "\n")
+
+        return camera_solution_map if camera_solution_map else None
+
     def setup_from_videos(self, videos, trial_name, trial_type='dynamic', extrinsicsTrial=False, **kwargs):
         """
         从视频设置试验数据 - 统一的试验设置方法
@@ -493,6 +935,11 @@ class LocalOpenCapPipeline:
         if not os.path.exists(metadata_path):
             self.create_session_metadata()
         
+        # 关键：在处理非标定试验前，确保标定方案一致性
+        if trial_type != 'calibration':
+            logger.info("🔒 确保标定方案一致性...")
+            self._ensure_calibration_consistency()
+        
         # 清理之前的结果文件（只清理输出文件，不删除输入视频）
         self._cleanup_previous_outputs(trial_type, trial_name)
         
@@ -508,8 +955,15 @@ class LocalOpenCapPipeline:
         
         # 根据试验类型设置特定参数
         if trial_type == 'calibration':
+            # 处理标定方案选择 - 在标定完成后立即应用
+            alternate_extrinsics = None
+            if 'alternate_extrinsics' in self.config.get('calibration', {}):
+                alternate_extrinsics = self.config['calibration']['alternate_extrinsics']
+                logger.info(f"使用配置文件指定的备选标定方案: {alternate_extrinsics}")
+
             main_args.update({
                 'extrinsicsTrial': True,
+                'alternateExtrinsics': alternate_extrinsics,  # 为标定试验也添加选择支持
             })
             
         elif trial_type == 'static':
@@ -519,11 +973,23 @@ class LocalOpenCapPipeline:
             # 应用姿态检测器设置
             pose_params = self._apply_pose_detector_settings(self.config['processing']['pose_detector'])
             
+            # 处理标定方案选择
+            alternate_extrinsics = None
+            if 'alternate_extrinsics' in self.config.get('calibration', {}):
+                alternate_extrinsics = self.config['calibration']['alternate_extrinsics']
+                logger.info(f"使用配置文件指定的备选标定方案: {alternate_extrinsics}")
+            elif self.config.get('calibration', {}).get('interactive_selection', False):
+                # 交互式选择标定方案
+                alternate_extrinsics = self._interactive_calibration_selection()
+                if alternate_extrinsics:
+                    logger.info(f"用户选择的备选标定方案: {alternate_extrinsics}")
+
             main_args.update({
                 'extrinsicsTrial': False,
                 'poseDetector': self.config['processing']['pose_detector'],
                 'scaleModel': True,  # 关键：模型缩放
                 'calibrationOptions': calibration_options,
+                'alternateExtrinsics': alternate_extrinsics,  # 添加备选标定方案
                 **pose_params
             })
             
@@ -558,7 +1024,15 @@ class LocalOpenCapPipeline:
                 if trial_type == 'static':
                     self._save_static_trial_outputs(trial_name)
                     self.static_trial_name = trial_name
-                
+                elif trial_type == 'calibration':
+                    # 标定完成后，立即进行交互式选择并应用
+                    if self.config.get('calibration', {}).get('interactive_selection', False):
+                        logger.info("🎯 标定完成，开始交互式方案选择...")
+                        alternate_cams = self._interactive_calibration_selection()
+                        if alternate_cams:
+                            self._apply_calibration_selection(alternate_cams)
+                            logger.info(f"✅ 已应用用户选择的标定方案: {alternate_cams}")
+
                 return True
             else:
                 logger.error(f"❌ {trial_type} 试验处理失败: {trial_name}")
@@ -858,6 +1332,30 @@ def create_config_template(output_path):
             yaml.dump(config, f, default_flow_style=False, allow_unicode=True)
     
     print(f"配置文件模板已创建: {output_path}")
+
+def apply_calibration_selection(session_path, camera_solution_map=None):
+    """
+    便捷函数：对现有会话应用标定方案选择
+
+    Args:
+        session_path: 会话目录路径 (如: "E:/path/to/Data/session_20250917_140441")
+        camera_solution_map: 摄像头方案映射 (如: {"Cam1": 0, "Cam2": 1})
+                            如果不指定，将进行交互式选择
+
+    Returns:
+        bool: 是否成功应用选择
+
+    Example:
+        # 交互式选择
+        apply_calibration_selection("E:/guge/opencap-core-local/Data/session_20250917_140441")
+
+        # 指定映射
+        apply_calibration_selection(
+            "E:/guge/opencap-core-local/Data/session_20250917_140441",
+            {"Cam1": 0, "Cam2": 1}
+        )
+    """
+    return LocalOpenCapPipeline.apply_calibration_selection_to_session(session_path, camera_solution_map)
 
 def run_local_opencap(video_dir, calibration_dir=None, static_dir=None, config_file=None, **kwargs):
     """
