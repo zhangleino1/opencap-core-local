@@ -1,9 +1,20 @@
 calibration:
   checkerboard:
     dimensions:
+    - 8
     - 5
-    - 4
     square_size: 35
+ 
+
+    # 棋盘格放置方式 - 非常重要，直接影响坐标系转换！
+    # 选项:
+    #   backWall - 棋盘格垂直放置在背景墙上（默认，推荐）
+    #   ground - 棋盘格水平放置在地面上
+    #   Perpendicular - 同backWall，垂直放置
+    #   Lying - 同ground，水平放置
+    # 注意: 此设置决定了从运动捕获坐标系到OpenSim坐标系的转换方式
+    # 错误的设置可能导致OpenSim中人物倒置或姿态异常
+    placement: backWall
   deployed_folders:
   - Deployed_720_60fps
   - Deployed
@@ -11,6 +22,8 @@ calibration:
   # 启用交互式标定方案选择 - 重要：确保Z轴指向标定板内部
   # 注意：只在标定试验时选择一次，后续静态和动态试验会自动使用保存的选择
   interactive_selection: true
+  force_correct_orientation: false  # 信任自动倒置检测，不强制覆盖
+
   # 标定方案选择 (针对每个摄像头，指定使用方案0还是方案1)
   # 格式: 摄像头名称: 方案编号 (0或1)
   # 如果不指定，默认使用方案0
@@ -19,7 +32,6 @@ calibration:
   extrinsic_solutions:
     # Cam1: 0  # 使用方案0 (默认)
     # Cam2: 1  # 使用方案1 (备选) - 如果默认方案的Z轴方向错误
-    # 注释掉表示使用默认方案0kerboard:
 directories:
   calibration_videos: ./LocalData/Calibration
   input_videos: ./LocalData/Videos
@@ -40,5 +52,5 @@ processing:
 session:
   description: 本地OpenCap会话
   name: LocalSession_20250907_172019
-  subject_height: 170.0
-  subject_mass: 67.0
+  subject_height: 173.0
+  subject_mass: 78.0

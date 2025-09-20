@@ -865,7 +865,11 @@ class LocalOpenCapPipeline:
         # 处理视频输入
         if isinstance(videos, str):
             if os.path.isdir(videos):
-                video_files = glob.glob(os.path.join(videos, "*.mp4"))
+                # 支持多种视频格式
+                video_patterns = ["*.MOV", "*.mp4", "*.MP4", "*.mov", "*.avi", "*.AVI"]
+                video_files = []
+                for pattern in video_patterns:
+                    video_files.extend(glob.glob(os.path.join(videos, pattern)))
             else:
                 video_files = [videos]
         else:
@@ -889,8 +893,9 @@ class LocalOpenCapPipeline:
             trial_dir = os.path.join(camera_dir, 'InputMedia', trial_name)
             os.makedirs(trial_dir, exist_ok=True)
             
-            # 复制视频文件
-            dest_file = os.path.join(trial_dir, f"{trial_name}.mp4")
+            # 复制视频文件，保持原始扩展名
+            original_ext = os.path.splitext(video_file)[1]
+            dest_file = os.path.join(trial_dir, f"{trial_name}{original_ext}")
             if not os.path.exists(dest_file):
                 shutil.copy2(video_file, dest_file)
                 logger.info(f"复制视频: {os.path.basename(video_file)} -> {camera_name}/{trial_name}/")
@@ -1169,7 +1174,11 @@ class LocalOpenCapPipeline:
                     logger.info(f"从配置获取静态目录: {static_directory}")
             
             # 获取摄像头列表
-            video_files = glob.glob(os.path.join(video_directory, "*.mp4"))
+            video_patterns = ["*.MOV", "*.mp4", "*.MP4", "*.mov", "*.avi", "*.AVI"]
+            video_files = []
+            for pattern in video_patterns:
+                video_files.extend(glob.glob(os.path.join(video_directory, pattern)))
+
             if not video_files:
                 raise ValueError(f"未找到视频文件: {video_directory}")
             
@@ -1252,12 +1261,19 @@ class LocalOpenCapPipeline:
     
     def create_session_metadata(self):
         """创建会话元数据文件 - 兼容官方格式"""
+        logger.info("=" * 60)
+        logger.info("📋 创建会话元数据")
+        logger.info("=" * 60)
+
         # 生成默认的摄像头模型映射
         camera_models = {}
         for i in range(1, 5):  # 支持最多4个摄像头
             cam_name = f'Cam{i}'
             camera_models[cam_name] = f'GenericCamera{i}'
-        
+
+        # 从配置获取棋盘格放置方式，默认为backWall
+        checkerboard_placement = self.config.get('calibration', {}).get('checkerboard', {}).get('placement', 'backWall')
+
         metadata = {
             'sessionWithCalibration': True,
             'mass_kg': self.config['session']['subject_mass'],
@@ -1268,7 +1284,7 @@ class LocalOpenCapPipeline:
                 'black2BlackCornersWidth_n': self.config['calibration']['checkerboard']['dimensions'][0],
                 'black2BlackCornersHeight_n': self.config['calibration']['checkerboard']['dimensions'][1],
                 'squareSideLength_mm': self.config['calibration']['checkerboard']['square_size'],
-                'placement': 'backWall'
+                'placement': checkerboard_placement
             },
             'posemodel': self.config['processing']['pose_detector'],  # 官方字段名
             'poseDetector': self.config['processing']['pose_detector'],
@@ -1283,17 +1299,167 @@ class LocalOpenCapPipeline:
             'localProcessing': True,
             'created_by': 'LocalOpenCapPipeline'
         }
-        
+
+        # 添加强制朝向配置（如果存在）
+        if 'force_correct_orientation' in self.config.get('calibration', {}):
+            force_orientation = self.config['calibration']['force_correct_orientation']
+            metadata['calibration'] = {
+                'force_correct_orientation': force_orientation
+            }
+            logger.info(f"   🔒 强制朝向配置: {force_orientation}")
+            if force_orientation:
+                logger.info("      ⚠️ 将忽略棋盘格倒置检测，强制使用正确朝向")
+
+        # 详细记录元数据信息
+        logger.info("   📊 会话基本信息:")
+        logger.info(f"      会话名称: {self.session_name}")
+        logger.info(f"      受试者体重: {metadata['mass_kg']} kg")
+        logger.info(f"      受试者身高: {metadata['height_m']} m")
+        logger.info(f"      处理模式: 本地处理")
+
+        logger.info("   🎯 标定板配置:")
+        logger.info(f"      尺寸: {metadata['checkerBoard']['black2BlackCornersWidth_n']} x {metadata['checkerBoard']['black2BlackCornersHeight_n']}")
+        logger.info(f"      正方形边长: {metadata['checkerBoard']['squareSideLength_mm']} mm")
+        logger.info(f"      放置方式: {metadata['checkerBoard']['placement']}")
+        logger.info("      ⚠️  放置方式说明:")
+        if checkerboard_placement == 'backWall':
+            logger.info("         - backWall: 棋盘格垂直放置在背景墙上")
+            logger.info("         - 这将触发棋盘格倒置检测")
+            logger.info("         - 影响坐标系转换: Y轴±90°, Z轴可能180°")
+        elif checkerboard_placement == 'ground':
+            logger.info("         - ground: 棋盘格水平放置在地面")
+            logger.info("         - 坐标系转换: X轴90°, Y轴90°")
+        else:
+            logger.info(f"         - {checkerboard_placement}: 自定义放置方式")
+
+        logger.info("   🔧 处理配置:")
+        logger.info(f"      姿态检测器: {metadata['poseDetector']}")
+        logger.info(f"      检测分辨率: {metadata['resolutionPoseDetection']}")
+        logger.info(f"      增强模型: {metadata['augmenter_model']}")
+        logger.info(f"      图像上采样因子: {metadata['imageUpsampleFactor']}")
+        logger.info(f"      OpenSim模型: {metadata['openSimModel']}")
+
+        logger.info("   📷 摄像头配置:")
+        for cam_name, model in camera_models.items():
+            logger.info(f"      {cam_name}: {model}")
+
         metadata_path = os.path.join(self.session_dir, 'sessionMetadata.yaml')
         with open(metadata_path, 'w', encoding='utf-8') as f:
             yaml.dump(metadata, f, default_flow_style=False, allow_unicode=True)
-        
-        logger.info(f"会话元数据已保存: {metadata_path}")
+
+        logger.info(f"   📁 元数据已保存: {metadata_path}")
+        logger.info("=" * 60)
+
         self.session_metadata = metadata
         return metadata_path
     
+    def _diagnose_coordinate_system_issues(self):
+        """诊断可能的坐标系问题"""
+        logger.info("🔍 开始坐标系问题诊断...")
+
+        # 检查TRC文件
+        trc_files = glob.glob(os.path.join(self.session_dir, 'MarkerData', '**', '*.trc'), recursive=True)
+
+        if not trc_files:
+            logger.warning("   未找到TRC文件，无法进行诊断")
+            return
+
+        for trc_file in trc_files:
+            logger.info(f"   📊 分析TRC文件: {os.path.basename(trc_file)}")
+
+            try:
+                # 简单读取TRC文件前几行来获取数据
+                with open(trc_file, 'r') as f:
+                    lines = f.readlines()
+
+                # 跳过头部，找到数据行
+                data_start = -1
+                for i, line in enumerate(lines):
+                    if 'Frame#' in line or 'Time' in line:
+                        data_start = i + 1
+                        break
+
+                if data_start > 0 and data_start < len(lines):
+                    # 读取第一帧数据
+                    data_line = lines[data_start].strip().split('\t')
+                    if len(data_line) > 10:  # 确保有足够的数据
+                        # 提取坐标数据 (跳过Frame#和Time列)
+                        coords = []
+                        for i in range(2, len(data_line), 3):  # X, Y, Z坐标
+                            if i+2 < len(data_line):
+                                try:
+                                    x = float(data_line[i])
+                                    y = float(data_line[i+1])
+                                    z = float(data_line[i+2])
+                                    if not (np.isnan(x) or np.isnan(y) or np.isnan(z)):
+                                        coords.append([x, y, z])
+                                except (ValueError, IndexError):
+                                    continue
+
+                        if coords:
+                            coords = np.array(coords)
+
+                            # 分析坐标分布
+                            x_range = [np.min(coords[:, 0]), np.max(coords[:, 0])]
+                            y_range = [np.min(coords[:, 1]), np.max(coords[:, 1])]
+                            z_range = [np.min(coords[:, 2]), np.max(coords[:, 2])]
+
+                            centroid = np.mean(coords, axis=0)
+
+                            logger.info(f"      坐标范围分析:")
+                            logger.info(f"        X: [{x_range[0]:.1f}, {x_range[1]:.1f}] mm")
+                            logger.info(f"        Y: [{y_range[0]:.1f}, {y_range[1]:.1f}] mm")
+                            logger.info(f"        Z: [{z_range[0]:.1f}, {z_range[1]:.1f}] mm")
+                            logger.info(f"        重心: [{centroid[0]:.1f}, {centroid[1]:.1f}, {centroid[2]:.1f}] mm")
+
+                            # 诊断问题
+                            issues = []
+
+                            # 检查Y轴是否为垂直轴
+                            y_span = y_range[1] - y_range[0]
+                            x_span = x_range[1] - x_range[0]
+                            z_span = z_range[1] - z_range[0]
+
+                            if y_span < max(x_span, z_span) * 0.5:
+                                issues.append("Y轴分布范围过小，可能不是垂直轴")
+
+                            # 检查重心位置
+                            if abs(centroid[1]) > 2000:
+                                issues.append(f"Y轴重心异常: {centroid[1]:.1f}mm")
+
+                            # 检查人体尺度
+                            max_distance = 0
+                            for i in range(len(coords)):
+                                for j in range(i+1, len(coords)):
+                                    dist = np.linalg.norm(coords[i] - coords[j])
+                                    max_distance = max(max_distance, dist)
+
+                            if max_distance < 800:  # 人体最大距离应该大于80cm
+                                issues.append(f"人体尺度过小: 最大距离仅{max_distance:.1f}mm")
+                            elif max_distance > 5000:  # 人体最大距离不应该超过5m
+                                issues.append(f"人体尺度过大: 最大距离达{max_distance:.1f}mm")
+
+                            # 报告问题
+                            if issues:
+                                logger.warning(f"      ⚠️ 发现潜在问题:")
+                                for issue in issues:
+                                    logger.warning(f"        - {issue}")
+
+                                logger.info(f"      💡 建议检查:")
+                                logger.info(f"        - 棋盘格放置方式是否正确设置")
+                                logger.info(f"        - 标定方案选择是否合适")
+                                logger.info(f"        - 摄像头标定质量")
+                            else:
+                                logger.info(f"      ✅ 坐标系看起来正常")
+
+            except Exception as e:
+                logger.warning(f"   分析TRC文件时出错: {str(e)}")
+
     def _generate_report(self, trial_name, camera_names):
         """生成处理报告"""
+        # 先进行坐标系诊断
+        self._diagnose_coordinate_system_issues()
+
         report = {
             'session_name': self.session_name,
             'processing_date': datetime.now().isoformat(),
@@ -1304,11 +1470,11 @@ class LocalOpenCapPipeline:
             'output_files': self._list_output_files(),
             'pipeline_version': 'LocalOpenCapPipeline_v2.0'
         }
-        
+
         report_path = os.path.join(self.session_dir, 'processing_report.yaml')
         with open(report_path, 'w', encoding='utf-8') as f:
             yaml.dump(report, f, default_flow_style=False, allow_unicode=True)
-        
+
         logger.info(f"处理报告已保存: {report_path}")
     
     def _list_output_files(self):
@@ -1408,10 +1574,16 @@ def run_local_opencap(video_dir, calibration_dir=None, static_dir=None, config_f
         ]
         
         for potential_dir in potential_static_dirs:
-            if os.path.exists(potential_dir) and glob.glob(os.path.join(potential_dir, "*.mp4")):
-                static_dir = potential_dir
-                logger.info(f"自动找到静态视频目录: {static_dir}")
-                break
+            if os.path.exists(potential_dir):
+                # 检查是否包含视频文件
+                video_patterns = ["*.MOV", "*.mp4", "*.MP4", "*.mov", "*.avi", "*.AVI"]
+                found_videos = []
+                for pattern in video_patterns:
+                    found_videos.extend(glob.glob(os.path.join(potential_dir, pattern)))
+                if found_videos:
+                    static_dir = potential_dir
+                    logger.info(f"自动找到静态视频目录: {static_dir}")
+                    break
     
     # 合并配置
     config = {}

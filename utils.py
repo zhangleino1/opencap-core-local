@@ -1487,13 +1487,39 @@ def delete_multiple_element(list_object, indices):
             list_object.pop(idx)
 
 def getVideoExtension(pathFileWithoutExtension):
-    
+
     pathVideoDir = os.path.split(pathFileWithoutExtension)[0]
     videoName = os.path.split(pathFileWithoutExtension)[1]
-    for file in os.listdir(pathVideoDir):
-        if videoName == file.rsplit('.', 1)[0]:
-            extension = '.' + file.rsplit('.', 1)[1]
-            
+    extension = None  # 初始化extension变量
+
+    # 检查目录是否存在
+    if not os.path.exists(pathVideoDir):
+        # 如果目录不存在，尝试常见的视频扩展名
+        common_extensions = ['.MOV', '.mp4', '.MP4', '.mov', '.avi', '.AVI']
+        for ext in common_extensions:
+            if os.path.exists(pathFileWithoutExtension + ext):
+                return ext
+        raise FileNotFoundError(f"Video directory not found: {pathVideoDir}")
+
+    try:
+        for file in os.listdir(pathVideoDir):
+            if videoName == file.rsplit('.', 1)[0]:
+                extension = '.' + file.rsplit('.', 1)[1]
+                break  # 找到后退出循环
+    except Exception as e:
+        raise Exception(f"Error listing directory {pathVideoDir}: {str(e)}")
+
+    # 如果没有找到匹配的文件，尝试常见扩展名
+    if extension is None:
+        common_extensions = ['.MOV', '.mp4', '.MP4', '.mov', '.avi', '.AVI']
+        for ext in common_extensions:
+            if os.path.exists(pathFileWithoutExtension + ext):
+                extension = ext
+                break
+
+        if extension is None:
+            raise FileNotFoundError(f"No video file found with base name: {videoName} in directory: {pathVideoDir}")
+
     return extension
 
 # check how much time has passed since last status check

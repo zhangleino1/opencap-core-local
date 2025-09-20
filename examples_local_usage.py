@@ -173,16 +173,16 @@ def show_directory_structure():
 
     your_project/
     ├── videos/                    # 运动视频目录
-    │   ├── camera1_walking.mp4   
-    │   ├── camera2_walking.mp4   
+    │   ├── camera1_walking.mp4
+    │   ├── camera2_walking.mp4
     │   └── ...
     ├── calibration/              # 标定视频目录（可选）
-    │   ├── camera1_calib.mp4     
-    │   ├── camera2_calib.mp4     
+    │   ├── camera1_calib.mp4
+    │   ├── camera2_calib.mp4
     │   └── ...
     ├── static/                   # 静态姿态视频目录（可选）
-    │   ├── camera1_static.mp4    
-    │   ├── camera2_static.mp4    
+    │   ├── camera1_static.mp4
+    │   ├── camera2_static.mp4
     │   └── ...
     └── config.yaml              # 配置文件（可选）
 
@@ -196,24 +196,88 @@ def show_directory_structure():
         └── VisualizerVideos/    # 处理后的视频
         """)
 
+def show_coordinate_system_debug_guide():
+    """显示坐标系调试指导"""
+    print("\n" + "="*80)
+    print("🔧 坐标系问题调试指导")
+    print("="*80)
+    print("""
+    如果OpenSim中人物姿态异常（躺着、手脚背后等），通常是坐标系转换问题：
+
+    🎯 1. 检查棋盘格放置方式
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    在配置文件(config.yaml)中设置正确的placement：
+
+    calibration:
+      checkerboard:
+        placement: backWall    # 或 ground
+
+    • backWall: 棋盘格垂直放置在背景墙上（推荐）
+    • ground: 棋盘格水平放置在地面上
+
+    🧭 2. 检查棋盘格朝向
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    标定完成后查看CalibrationImages目录：
+    • extrinsicCalib_Cam1.jpg (方案0)
+    • extrinsicCalib_altSoln_Cam1.jpg (方案1)
+
+    正确的标定应该：
+    ✅ Z轴(深蓝色箭头)垂直指向标定板内部
+    ✅ X轴(红色)和Y轴(绿色)平行于标定板
+    ❌ 如果Z轴指向错误方向，需要切换方案
+
+    🔄 3. 坐标系转换效果
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    backWall模式转换：
+    • 正向棋盘格: Y轴+90°, Z轴+180°
+    • 倒置棋盘格: Y轴-90°
+
+    ground模式转换：
+    • X轴+90°, Y轴+90°
+
+    📋 4. 调试步骤
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    1. 检查配置文件中的placement设置
+    2. 查看处理日志中的坐标系转换信息
+    3. 检查标定图像中的坐标轴方向
+    4. 必要时调整标定方案选择
+    5. 重新运行处理流程
+
+    🚨 常见问题解决
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    问题: 人物躺着
+    → 检查placement是否为ground但实际是backWall
+
+    问题: 手脚姿势错误
+    → 检查标定板朝向，可能需要切换方案
+
+    问题: 整体方向错误
+    → 确认标定时棋盘格的实际放置方式
+    """)
+    print("="*80)
+
 if __name__ == "__main__":
     print("本地OpenCap处理管道使用示例")
     print("=" * 50)
-    
+
     # 设置调试处理器
     setup_debug_handlers()
-    
+
     show_directory_structure()
-    
+
+    # 显示坐标系调试指导
+    show_coordinate_system_debug_guide()
+
     print("\n📋 配置文件使用方式:")
     try:
         example_with_config()
     except Exception as e:
         print(f"配置文件示例失败: {str(e)}")
         print_all_threads()
-    
+
     # print("\n🔧 简单使用方式:")
     # example_simple_usage()
-    
+
     print("✅ 示例运行完成！")
     print("📖 本地管道提供了完整的OpenCap功能。")
+    print("\n💡 如果遇到坐标系问题，请参考上面的调试指导。")

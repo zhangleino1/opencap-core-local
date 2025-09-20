@@ -299,23 +299,39 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                 # Hopefully you get a clean shot of the checkerboard in at
                 # least one frame of each camera.
                 useSecondExtrinsicsSolution = (
-                    alternateExtrinsics is not None and 
+                    alternateExtrinsics is not None and
                     camName in alternateExtrinsics)
+                logging.info(f"   🎯 {camName} 外参计算设置:")
+                logging.info(f"      使用备选解决方案: {useSecondExtrinsicsSolution}")
+
                 pathVideoWithoutExtension = os.path.join(
                     camDir, 'InputMedia', trialName, trial_id)
                 extension = getVideoExtension(pathVideoWithoutExtension)
-                extrinsicPath = os.path.join(camDir, 'InputMedia', trialName, 
-                                             trial_id + extension) 
-                                              
+                extrinsicPath = os.path.join(camDir, 'InputMedia', trialName,
+                                             trial_id + extension)
+                logging.info(f"      标定视频路径: {extrinsicPath}")
+
                 # Modify intrinsics if camera view is rotated
+                logging.info(f"      图像上采样因子: {imageUpsampleFactor}")
                 CamParams = rotateIntrinsics(CamParams,extrinsicPath)
-                
+
                 # for 720p, imageUpsampleFactor=4 is best for small board
                 try:
                     CamParams = calcExtrinsicsFromVideo(
-                        extrinsicPath,CamParams, CheckerBoardParams, 
+                        extrinsicPath,CamParams, CheckerBoardParams,
                         visualize=False, imageUpsampleFactor=imageUpsampleFactor,
                         useSecondExtrinsicsSolution = useSecondExtrinsicsSolution)
+
+                    # 记录外参计算结果
+                    if 'rotation' in CamParams:
+                        import numpy as np  # 确保numpy在本地作用域内可用
+                        rotation = CamParams['rotation']
+                        translation = CamParams['translation']
+                        logging.info(f"   ✅ {camName} 外参计算成功:")
+                        logging.info(f"      旋转矩阵行列式: {np.linalg.det(rotation):.6f} (应该接近1)")
+                        logging.info(f"      平移向量模长: {np.linalg.norm(translation):.3f} mm")
+                        logging.info(f"      相机位置: [{translation[0][0]:.1f}, {translation[1][0]:.1f}, {translation[2][0]:.1f}] mm")
+
                 except Exception as e:
                     if len(e.args) == 2: # specific exception
                         raise Exception(e.args[0], e.args[1])
@@ -355,31 +371,75 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
     
     if runPoseDetection:
         # Get rotation angles from motion capture environment to OpenSim.
-        # Space-fixed are lowercase, Body-fixed are uppercase. 
+        # Space-fixed are lowercase, Body-fixed are uppercase.
         checkerBoardMount = sessionMetadata['checkerBoard']['placement']
         logging.info(f"🎯 棋盘格放置方式: {checkerBoardMount}")
+        logging.info("=" * 80)
+        logging.info("🔄 开始坐标系转换配置分析")
+        logging.info("=" * 80)
 
         if checkerBoardMount == 'backWall' or checkerBoardMount == 'Perpendicular':
             # 改进的棋盘格倒置检测
             logging.info("🔍 背墙放置模式，开始检测棋盘格朝向...")
+            logging.info("   📋 背墙模式说明:")
+            logging.info("      - 棋盘格垂直放置在墙上")
+            logging.info("      - 需要检测棋盘格是否倒置")
+            logging.info("      - 根据检测结果选择不同的坐标系转换")
+
+            # 记录摄像头参数用于调试
+            logging.info(f"   📷 可用摄像头数量: {len(CamParamDict)}")
+            for cam_name in CamParamDict.keys():
+                logging.info(f"      - {cam_name}: 外参已加载")
+
+            # 检查是否有强制朝向配置
+            force_correct_orientation = False
+            if 'force_correct_orientation' in sessionMetadata.get('calibration', {}):
+                force_correct_orientation = sessionMetadata['calibration']['force_correct_orientation']
+                logging.info(f"   🔒 检测到强制朝向配置: {force_correct_orientation}")
+
             upsideDownChecker = isCheckerboardUpsideDown(CamParamDict)
+            logging.info(f"   🧭 棋盘格倒置检测结果: {upsideDownChecker}")
+
+            # 如果强制正确朝向，则覆盖检测结果
+            if force_correct_orientation:
+                upsideDownChecker = False
+                logging.info("   🔒 强制使用正确朝向，忽略自动检测结果")
 
             if upsideDownChecker:
-                rotationAngles = {'y':-90}
-                logging.info("🔄 应用倒置补偿旋转: Y轴-90°")
+                rotationAngles = {'x': -90}
+                logging.info("🔄 检测到棋盘格倒置，应用倒置补偿旋转:")
+                logging.info("   X轴旋转: -90°")
+                logging.info("   📝 说明: 将Z轴(垂直向上)正确转换为OpenSim Y轴(垂直向上)")
             else:
                 rotationAngles = {'y':90, 'z':180}
+                logging.info("🔄 检测到棋盘格正向，应用标准背墙旋转:")
+                logging.info("   Y轴旋转: +90°")
+                logging.info("   Z轴旋转: +180°")
+                logging.info("   📝 说明: 从背墙坐标系转换到OpenSim坐标系")
+
         elif checkerBoardMount == 'ground' or checkerBoardMount == 'Lying':
             rotationAngles = {'x':90, 'y':90}
-            logging.info("🔄 地面放置模式，应用旋转: X轴90°, Y轴90°")
+            logging.info("🔄 地面放置模式，应用地面旋转:")
+            logging.info("   X轴旋转: +90°")
+            logging.info("   Y轴旋转: +90°")
+            logging.info("   📝 说明: 从地面坐标系转换到OpenSim坐标系")
         else:
-            raise Exception('checkerBoard placement value in\
-             sessionMetadata.yaml is not currently supported')
+            error_msg = f'棋盘格放置方式 "{checkerBoardMount}" 不受支持'
+            logging.error(f"❌ {error_msg}")
+            raise Exception(f'checkerBoard placement value "{checkerBoardMount}" in sessionMetadata.yaml is not currently supported')
 
         # 总结旋转设置
+        logging.info("=" * 80)
         logging.info("📐 坐标系转换设置完成:")
-        logging.info(f"   最终旋转角度: {rotationAngles}")
-        logging.info("   这些角度将用于从运动捕获坐标系转换到OpenSim坐标系")
+        logging.info(f"   🎯 棋盘格放置: {checkerBoardMount}")
+        if checkerBoardMount in ['backWall', 'Perpendicular']:
+            logging.info(f"   🧭 倒置检测: {upsideDownChecker}")
+        logging.info(f"   🔄 最终旋转角度: {rotationAngles}")
+        logging.info("   📚 坐标系说明:")
+        logging.info("      - 运动捕获坐标系: 基于棋盘格建立的原始坐标系")
+        logging.info("      - OpenSim坐标系: Y轴向上，X轴向前，Z轴向右")
+        logging.info("      - 这些角度将用于从运动捕获坐标系转换到OpenSim坐标系")
+        logging.info("=" * 80)
 
         # Detect all available cameras (ie, cameras with existing videos).
         cameras_available = []
@@ -481,32 +541,189 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
      
     if runTriangulation:
         # Triangulate.
+        logging.info("=" * 80)
+        logging.info("🔺 开始3D三角化重建")
+        logging.info("=" * 80)
+        logging.info(f"   📷 使用摄像头: {cameras2Use}")
+        logging.info(f"   🎞️  帧率: {frameRate} fps")
+
+        # 详细记录摄像头参数
+        logging.info("   📷 摄像头外参详情:")
+        for cam_name in cameras2Use:
+            if cam_name in CamParamDict:
+                cam_params = CamParamDict[cam_name]
+                if 'rotation' in cam_params:
+                    import numpy as np  # 确保numpy在本地作用域内可用
+                    rotation = cam_params['rotation']
+                    translation = cam_params['translation']
+                    logging.info(f"      {cam_name}:")
+                    logging.info(f"        旋转矩阵: {np.array2string(rotation.flatten()[:6], precision=3)}...")
+                    logging.info(f"        平移向量: {np.array2string(translation.flatten(), precision=3)}")
+                else:
+                    logging.info(f"      {cam_name}: 外参格式未知")
+
+        # 安全地获取2D关键点数据信息
+        try:
+            if 'keypoints2D' in locals() and keypoints2D is not None:
+                if hasattr(keypoints2D, 'shape'):
+                    logging.info(f"   📊 2D关键点数据形状: {keypoints2D.shape}")
+                elif isinstance(keypoints2D, dict):
+                    logging.info(f"   📊 2D关键点数据: {len(keypoints2D)} 个摄像头")
+                    for cam_name, data in keypoints2D.items():
+                        if hasattr(data, 'shape'):
+                            logging.info(f"      {cam_name}: {data.shape}")
+                            # 分析2D关键点的分布
+                            if data.size > 0:
+                                valid_points = data[~np.isnan(data)]
+                                if len(valid_points) > 0:
+                                    logging.info(f"        有效点范围: X[{np.min(valid_points):.1f}, {np.max(valid_points):.1f}]")
+                else:
+                    logging.info(f"   📊 2D关键点数据类型: {type(keypoints2D)}")
+            else:
+                logging.info(f"   📊 2D关键点数据: 未初始化")
+        except Exception as e:
+            logging.info(f"   📊 2D关键点数据: 获取信息时出错 - {str(e)}")
+
         try:
             keypoints3D, confidence3D = triangulateMultiviewVideo(
-                CamParamDict, keypoints2D, ignoreMissingMarkers=False, 
+                CamParamDict, keypoints2D, ignoreMissingMarkers=False,
                 cams2Use=cameras2Use, confidenceDict=confidence,
-                spline3dZeros = True, splineMaxFrames=int(frameRate/5), 
+                spline3dZeros = True, splineMaxFrames=int(frameRate/5),
                 nansInOut=nansInOut,CameraDirectories=cameraDirectories,
                 trialName=trialName,startEndFrames=startEndFrames,trialID=trial_id,
                 outputMediaFolder=outputMediaFolder)
+
+            logging.info("✅ 3D三角化重建成功完成")
+            logging.info(f"   📐 3D关键点数据形状: {keypoints3D.shape}")
+            logging.info(f"   📊 置信度数据形状: {confidence3D.shape}")
+
+            # 详细分析3D重建结果
+            logging.info("   🔍 3D重建质量分析:")
+            if keypoints3D.size > 0:
+                # 分析各个轴的数据分布
+                x_data = keypoints3D[0, :, :].flatten()
+                y_data = keypoints3D[1, :, :].flatten()
+                z_data = keypoints3D[2, :, :].flatten()
+
+                valid_x = x_data[~np.isnan(x_data)]
+                valid_y = y_data[~np.isnan(y_data)]
+                valid_z = z_data[~np.isnan(z_data)]
+
+                if len(valid_x) > 0:
+                    logging.info(f"      X轴范围: [{np.min(valid_x):.3f}, {np.max(valid_x):.3f}] mm, 标准差: {np.std(valid_x):.3f}")
+                if len(valid_y) > 0:
+                    logging.info(f"      Y轴范围: [{np.min(valid_y):.3f}, {np.max(valid_y):.3f}] mm, 标准差: {np.std(valid_y):.3f}")
+                if len(valid_z) > 0:
+                    logging.info(f"      Z轴范围: [{np.min(valid_z):.3f}, {np.max(valid_z):.3f}] mm, 标准差: {np.std(valid_z):.3f}")
+
+                # 计算人体尺度特征
+                if keypoints3D.shape[2] > 0:
+                    # 选择第一帧进行分析
+                    frame_data = keypoints3D[:, :, 0]
+                    valid_frame = frame_data[:, ~np.isnan(frame_data).any(axis=0)]
+
+                    if valid_frame.shape[1] > 1:
+                        # 计算点之间的距离分布
+                        distances = []
+                        for i in range(valid_frame.shape[1]):
+                            for j in range(i+1, valid_frame.shape[1]):
+                                dist = np.linalg.norm(valid_frame[:, i] - valid_frame[:, j])
+                                distances.append(dist)
+
+                        if distances:
+                            logging.info(f"      点间距离: 平均 {np.mean(distances):.3f}mm, 最大 {np.max(distances):.3f}mm")
+
+                            # 判断尺度是否合理（人体高度大概1000-2000mm）
+                            max_dist = np.max(distances)
+                            if max_dist < 500:
+                                logging.warning(f"      ⚠️ 人体尺度可能过小，最大距离仅 {max_dist:.3f}mm")
+                            elif max_dist > 5000:
+                                logging.warning(f"      ⚠️ 人体尺度可能过大，最大距离达 {max_dist:.3f}mm")
+                            else:
+                                logging.info(f"      ✅ 人体尺度看起来合理")
+
         except Exception as e:
+            logging.error("❌ 3D三角化重建失败")
             if len(e.args) == 2: # specific exception
+                logging.error(f"   具体错误: {e.args[0]}")
                 logging.error(e.args[0], exc_info=True)
                 raise Exception(e.args[0], e.args[1])
             elif len(e.args) == 1: # generic exception
                 exception = "Triangulation failed. Verify your setup and try again. Visit https://www.opencap.ai/best-pratices to learn more about data collection and https://www.opencap.ai/troubleshooting for potential causes for a failed trial."
+                logging.error(f"   通用错误: {exception}")
                 logging.error(exception, exc_info=True)
                 raise Exception(exception, traceback.format_exc())
-        
+
         # Throw an error if not enough data
-        if keypoints3D.shape[2] < 10:
-            e1 = 'Error - less than 10 good frames of triangulated data.'
-            raise Exception(e1,e1)
-        
+        valid_frames = keypoints3D.shape[2]
+        logging.info(f"   ✅ 有效3D数据帧数: {valid_frames}")
+
+        if valid_frames < 10:
+            error_msg = f'错误 - 有效的3D数据帧数少于10帧 (当前: {valid_frames}帧)'
+            logging.error(f"❌ {error_msg}")
+            logging.error("   可能原因:")
+            logging.error("   - 2D姿态检测质量差")
+            logging.error("   - 摄像头标定不准确")
+            logging.error("   - 视频同步失败")
+            logging.error("   - 被试人员在摄像头视野范围外")
+            raise Exception(error_msg, error_msg)
+
         # Write TRC.
+        logging.info("=" * 80)
+        logging.info("📝 开始写入TRC文件")
+        logging.info("=" * 80)
+        logging.info(f"   📁 输出文件: {pathOutputFiles[trialName]}")
+        logging.info(f"   🏷️  关键点名称数量: {len(keypointNames)}")
+        logging.info(f"   🔄 应用的旋转角度: {rotationAngles}")
+        logging.info(f"   🎞️  帧率: {frameRate} fps")
+
+        # 记录3D数据的统计信息
+        import numpy as np
+        logging.info("   📊 3D数据统计:")
+        logging.info(f"      数据形状: {keypoints3D.shape}")
+        logging.info(f"      最小值: {np.nanmin(keypoints3D):.3f}")
+        logging.info(f"      最大值: {np.nanmax(keypoints3D):.3f}")
+        logging.info(f"      平均值: {np.nanmean(keypoints3D):.3f}")
+        logging.info(f"      NaN比例: {np.isnan(keypoints3D).sum() / keypoints3D.size * 100:.1f}%")
+
+        # 分析坐标系转换前的数据特征
+        logging.info("   🔄 坐标系转换前数据分析:")
+        if keypoints3D.shape[2] > 0:
+            first_frame = keypoints3D[:, :, 0]
+            valid_points = first_frame[:, ~np.isnan(first_frame).any(axis=0)]
+
+            if valid_points.shape[1] > 0:
+                logging.info(f"      转换前坐标系特征:")
+                logging.info(f"        X轴 (转换前): [{np.min(valid_points[0, :]):.1f}, {np.max(valid_points[0, :]):.1f}] mm")
+                logging.info(f"        Y轴 (转换前): [{np.min(valid_points[1, :]):.1f}, {np.max(valid_points[1, :]):.1f}] mm")
+                logging.info(f"        Z轴 (转换前): [{np.min(valid_points[2, :]):.1f}, {np.max(valid_points[2, :]):.1f}] mm")
+
+                # 计算重心位置
+                centroid = np.mean(valid_points, axis=1)
+                logging.info(f"        重心位置: [{centroid[0]:.1f}, {centroid[1]:.1f}, {centroid[2]:.1f}] mm")
+
+                # 分析坐标系方向性
+                y_spread = np.max(valid_points[1, :]) - np.min(valid_points[1, :])
+                x_spread = np.max(valid_points[0, :]) - np.min(valid_points[0, :])
+                z_spread = np.max(valid_points[2, :]) - np.min(valid_points[2, :])
+                logging.info(f"        各轴分布范围: X={x_spread:.1f}, Y={y_spread:.1f}, Z={z_spread:.1f} mm")
+
+                # 推断可能的坐标系问题
+                if abs(centroid[1]) > 1000:  # Y轴重心偏离过大
+                    logging.warning(f"      ⚠️ Y轴重心位置异常: {centroid[1]:.1f}mm，可能存在坐标系转换问题")
+
+                # 检查是否存在明显的方向性错误
+                if y_spread < x_spread and y_spread < z_spread:
+                    logging.warning(f"      ⚠️ Y轴分布范围最小，可能不是垂直轴，检查坐标系设置")
+
         writeTRCfrom3DKeypoints(keypoints3D, pathOutputFiles[trialName],
-                                keypointNames, frameRate=frameRate, 
+                                keypointNames, frameRate=frameRate,
                                 rotationAngles=rotationAngles)
+
+        logging.info("✅ TRC文件写入完成")
+        logging.info("   📝 说明: TRC文件包含了经过坐标系转换的3D标记点数据")
+        logging.info("   🔄 坐标系: 已从运动捕获坐标系转换为OpenSim坐标系")
+        logging.info("=" * 80)
     
     # %% Augmentation.
     
@@ -551,18 +768,22 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
         
     # %% OpenSim pipeline.
     if runOpenSimPipeline:
-        openSimPipelineDir = os.path.join(baseDir, "opensimPipeline")        
-        
+        logging.info("=" * 80)
+        logging.info("🦴 开始OpenSim生物力学分析管道")
+        logging.info("=" * 80)
+
+        openSimPipelineDir = os.path.join(baseDir, "opensimPipeline")
+
         if genericFolderNames:
             openSimFolderName = 'OpenSimData'
         else:
-            openSimFolderName = os.path.join('OpenSimData', 
+            openSimFolderName = os.path.join('OpenSimData',
                                              poseDetector + suff_pd)
             if not markerDataFolderNameSuffix is None:
                 openSimFolderName = os.path.join(openSimFolderName,
                                                  markerDataFolderNameSuffix)
-        
-        openSimDir = os.path.join(sessionDir, openSimFolderName)        
+
+        openSimDir = os.path.join(sessionDir, openSimFolderName)
         outputScaledModelDir = os.path.join(openSimDir, 'Model')
 
         # Check if shoulder model.
@@ -570,111 +791,193 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
             suffix_model = '_shoulder'
         else:
             suffix_model = ''
-        
-        # Scaling.    
+
+        logging.info(f"   📁 OpenSim目录: {openSimDir}")
+        logging.info(f"   🏗️  基础模型: {sessionMetadata['openSimModel']}{suffix_model}")
+        logging.info(f"   👤 受试者信息: 体重{sessionMetadata['mass_kg']}kg, 身高{sessionMetadata['height_m']}m")
+        logging.info(f"   🔧 是否缩放模型: {scaleModel}")
+
+        # Scaling.
         if scaleModel:
+            logging.info("=" * 60)
+            logging.info("📏 开始模型缩放（静态试验）")
+            logging.info("=" * 60)
+
             os.makedirs(outputScaledModelDir, exist_ok=True)
             # Path setup file.
             if scalingSetup == 'any_pose':
                 genericSetupFile4ScalingName = 'Setup_scaling_LaiUhlrich2022_any_pose.xml'
+                logging.info("   🧘 使用任意姿态缩放设置")
             else: # by default, use upright_standing_pose
                 genericSetupFile4ScalingName = 'Setup_scaling_LaiUhlrich2022.xml'
+                logging.info("   🧍 使用直立站姿缩放设置")
 
             pathGenericSetupFile4Scaling = os.path.join(
                 openSimPipelineDir, 'Scaling', genericSetupFile4ScalingName)
             # Path model file.
             pathGenericModel4Scaling = os.path.join(
-                openSimPipelineDir, 'Models', 
-                sessionMetadata['openSimModel'] + '.osim')            
+                openSimPipelineDir, 'Models',
+                sessionMetadata['openSimModel'] + '.osim')
             # Path TRC file.
             pathTRCFile4Scaling = pathAugmentedOutputFiles[trialName]
+
+            logging.info(f"   📋 缩放设置文件: {genericSetupFile4ScalingName}")
+            logging.info(f"   🏗️  通用模型文件: {os.path.basename(pathGenericModel4Scaling)}")
+            logging.info(f"   📊 TRC数据文件: {os.path.basename(pathTRCFile4Scaling)}")
+
             # Get time range.
             try:
+                logging.info("   🎯 开始识别缩放时间范围...")
                 thresholdPosition = 0.003
                 maxThreshold = 0.015
                 increment = 0.001
                 success = False
                 timeRange4Scaling = None  # 初始化变量
-                
+                attempt_count = 0
+
                 while thresholdPosition <= maxThreshold and not success:
+                    attempt_count += 1
                     try:
+                        logging.info(f"      尝试 #{attempt_count}: 位置阈值 = {thresholdPosition:.3f}")
                         timeRange4Scaling = getScaleTimeRange(
                             pathTRCFile4Scaling,
                             thresholdPosition=thresholdPosition,
                             thresholdTime=0.1, removeRoot=True)
                         success = True
+                        logging.info(f"   ✅ 成功识别缩放时间范围: {timeRange4Scaling}")
                     except Exception as e:
-                        logging.info(f"Attempt identifying scaling time range with thresholdPosition {thresholdPosition} failed: {e}")
+                        logging.info(f"      ❌ 失败: {str(e)}")
                         thresholdPosition += increment  # Increase the threshold for the next iteration
 
                 # 检查是否成功找到时间范围
                 if not success or timeRange4Scaling is None:
-                    raise Exception("Could not identify a suitable scaling time range after trying all thresholds")
+                    error_msg = f"无法在尝试{attempt_count}次后找到合适的缩放时间范围"
+                    logging.error(f"   ❌ {error_msg}")
+                    logging.error("   可能原因:")
+                    logging.error("      - 静态姿态数据质量差")
+                    logging.error("      - 受试者在静态试验中移动太多")
+                    logging.error("      - TRC文件中缺少足够的稳定数据")
+                    raise Exception(error_msg)
 
                 # Run scale tool.
-                logging.info('Running Scaling')
+                logging.info("   🚀 开始运行模型缩放工具...")
+                logging.info(f"      时间范围: {timeRange4Scaling[0]:.3f}s - {timeRange4Scaling[1]:.3f}s")
+                logging.info(f"      持续时间: {timeRange4Scaling[1] - timeRange4Scaling[0]:.3f}s")
+
                 pathScaledModel = runScaleTool(
                     pathGenericSetupFile4Scaling, pathGenericModel4Scaling,
-                    sessionMetadata['mass_kg'], pathTRCFile4Scaling, 
+                    sessionMetadata['mass_kg'], pathTRCFile4Scaling,
                     timeRange4Scaling, outputScaledModelDir,
-                    subjectHeight=sessionMetadata['height_m'], 
+                    subjectHeight=sessionMetadata['height_m'],
                     suffix_model=suffix_model)
+
+                logging.info(f"   ✅ 模型缩放成功完成")
+                logging.info(f"      缩放后模型: {os.path.basename(pathScaledModel)}")
+
             except Exception as e:
+                logging.error("❌ 模型缩放失败")
                 if len(e.args) == 2: # specific exception
+                    logging.error(f"   具体错误: {e.args[0]}")
                     raise Exception(e.args[0], e.args[1])
                 elif len(e.args) == 1: # generic exception
                     exception = "Musculoskeletal model scaling failed. Verify your setup and try again. Visit https://www.opencap.ai/best-pratices to learn more about data collection and https://www.opencap.ai/troubleshooting for potential causes for a failed neutral pose."
+                    logging.error(f"   通用错误: {exception}")
                     raise Exception(exception, traceback.format_exc())
+
             # Extract one frame from videos to verify neutral pose.
-            staticImagesFolderDir = os.path.join(sessionDir, 
+            logging.info("   📸 提取静态姿态图像用于验证...")
+            staticImagesFolderDir = os.path.join(sessionDir,
                                                  'NeutralPoseImages')
             os.makedirs(staticImagesFolderDir, exist_ok=True)
-            popNeutralPoseImages(cameraDirectories, cameras2Use, 
+            popNeutralPoseImages(cameraDirectories, cameras2Use,
                                  timeRange4Scaling[0], staticImagesFolderDir,
-                                 trial_id, writeVideo = True)   
+                                 trial_id, writeVideo = True)
+            logging.info(f"      验证图像保存到: {staticImagesFolderDir}")
+
             pathOutputIK = pathScaledModel[:-5] + '.mot'
             pathModelIK = pathScaledModel
-        
+
+            logging.info("   📝 注意: 缩放后的模型将用于后续的逆运动学分析")
+
         # Inverse kinematics.
         if not scaleModel:
+            logging.info("=" * 60)
+            logging.info("🏃 开始逆运动学分析（动态试验）")
+            logging.info("=" * 60)
+
             outputIKDir = os.path.join(openSimDir, 'Kinematics')
             os.makedirs(outputIKDir, exist_ok=True)
             # Check if there is a scaled model.
-            pathScaledModel = os.path.join(outputScaledModelDir, 
-                                            sessionMetadata['openSimModel'] + 
+            pathScaledModel = os.path.join(outputScaledModelDir,
+                                            sessionMetadata['openSimModel'] +
                                             "_scaled.osim")
+
+            logging.info(f"   📂 IK输出目录: {outputIKDir}")
+            logging.info(f"   🔍 查找缩放后模型: {os.path.basename(pathScaledModel)}")
+
             if os.path.exists(pathScaledModel):
+                logging.info("   ✅ 找到缩放后的模型")
+
                 # Path setup file.
                 genericSetupFile4IKName = 'Setup_IK{}.xml'.format(suffix_model)
                 pathGenericSetupFile4IK = os.path.join(
                     openSimPipelineDir, 'IK', genericSetupFile4IKName)
                 # Path TRC file.
                 pathTRCFile4IK = pathAugmentedOutputFiles[trialName]
-                # Run IK tool. 
-                logging.info('Running Inverse Kinematics')
+
+                logging.info(f"   📋 IK设置文件: {genericSetupFile4IKName}")
+                logging.info(f"   📊 TRC数据文件: {os.path.basename(pathTRCFile4IK)}")
+
+                # Run IK tool.
+                logging.info('   🚀 开始运行逆运动学工具...')
                 try:
                     pathOutputIK, pathModelIK = runIKTool(
-                        pathGenericSetupFile4IK, pathScaledModel, 
+                        pathGenericSetupFile4IK, pathScaledModel,
                         pathTRCFile4IK, outputIKDir)
+
+                    logging.info("   ✅ 逆运动学分析成功完成")
+                    logging.info(f"      输出MOT文件: {os.path.basename(pathOutputIK)}")
+                    logging.info("      📝 说明: MOT文件包含关节角度随时间的变化")
+
                 except Exception as e:
+                    logging.error("❌ 逆运动学分析失败")
                     if len(e.args) == 2: # specific exception
+                        logging.error(f"   具体错误: {e.args[0]}")
                         raise Exception(e.args[0], e.args[1])
                     elif len(e.args) == 1: # generic exception
                         exception = "Inverse kinematics failed. Verify your setup and try again. Visit https://www.opencap.ai/best-pratices to learn more about data collection and https://www.opencap.ai/troubleshooting for potential causes for a failed trial."
+                        logging.error(f"   通用错误: {exception}")
                         raise Exception(exception, traceback.format_exc())
             else:
-                raise ValueError("No scaled model available.")
-        
+                error_msg = "未找到缩放后的模型，请先运行静态试验进行模型缩放"
+                logging.error(f"   ❌ {error_msg}")
+                logging.error(f"   期望路径: {pathScaledModel}")
+                raise ValueError(error_msg)
+
         # Write body transforms to json for visualization.
+        logging.info("=" * 60)
+        logging.info("📊 生成可视化数据")
+        logging.info("=" * 60)
+
         outputJsonVisDir = os.path.join(sessionDir,'VisualizerJsons',
                                         trialName)
         os.makedirs(outputJsonVisDir,exist_ok=True)
         outputJsonVisPath = os.path.join(outputJsonVisDir,
                                          trialName + '.json')
+
+        logging.info(f"   📁 可视化目录: {outputJsonVisDir}")
+        logging.info(f"   📄 JSON文件: {os.path.basename(outputJsonVisPath)}")
+        logging.info(f"   📏 垂直偏移: {vertical_offset}")
+
         generateVisualizerJson(pathModelIK, pathOutputIK,
-                               outputJsonVisPath, 
+                               outputJsonVisPath,
                                vertical_offset=vertical_offset,
                                roundToRotations=4, roundToTranslations=4)
+
+        logging.info("   ✅ 可视化数据生成完成")
+        logging.info("=" * 80)
+        logging.info("🎉 OpenSim生物力学分析管道完成")
+        logging.info("=" * 80)
         
     # %% Rewrite settings, adding offset  
     if not extrinsicsTrial:
