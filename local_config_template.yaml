@@ -22,7 +22,6 @@ calibration:
   # 启用交互式标定方案选择 - 重要：确保Z轴指向标定板内部
   # 注意：只在标定试验时选择一次，后续静态和动态试验会自动使用保存的选择
   interactive_selection: true
-  force_correct_orientation: false  # 信任自动倒置检测，不强制覆盖
 
   # 标定方案选择 (针对每个摄像头，指定使用方案0还是方案1)
   # 格式: 摄像头名称: 方案编号 (0或1)

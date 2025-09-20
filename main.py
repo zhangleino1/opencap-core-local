@@ -391,22 +391,14 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
             for cam_name in CamParamDict.keys():
                 logging.info(f"      - {cam_name}: 外参已加载")
 
-            # 检查是否有强制朝向配置
-            force_correct_orientation = False
-            if 'force_correct_orientation' in sessionMetadata.get('calibration', {}):
-                force_correct_orientation = sessionMetadata['calibration']['force_correct_orientation']
-                logging.info(f"   🔒 检测到强制朝向配置: {force_correct_orientation}")
+
 
             upsideDownChecker = isCheckerboardUpsideDown(CamParamDict)
             logging.info(f"   🧭 棋盘格倒置检测结果: {upsideDownChecker}")
 
-            # 如果强制正确朝向，则覆盖检测结果
-            if force_correct_orientation:
-                upsideDownChecker = False
-                logging.info("   🔒 强制使用正确朝向，忽略自动检测结果")
 
             if upsideDownChecker:
-                rotationAngles = {'x': -90}
+                rotationAngles = {'y':-90}
                 logging.info("🔄 检测到棋盘格倒置，应用倒置补偿旋转:")
                 logging.info("   X轴旋转: -90°")
                 logging.info("   📝 说明: 将Z轴(垂直向上)正确转换为OpenSim Y轴(垂直向上)")

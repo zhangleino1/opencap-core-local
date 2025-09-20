@@ -1300,15 +1300,7 @@ class LocalOpenCapPipeline:
             'created_by': 'LocalOpenCapPipeline'
         }
 
-        # 添加强制朝向配置（如果存在）
-        if 'force_correct_orientation' in self.config.get('calibration', {}):
-            force_orientation = self.config['calibration']['force_correct_orientation']
-            metadata['calibration'] = {
-                'force_correct_orientation': force_orientation
-            }
-            logger.info(f"   🔒 强制朝向配置: {force_orientation}")
-            if force_orientation:
-                logger.info("      ⚠️ 将忽略棋盘格倒置检测，强制使用正确朝向")
+
 
         # 详细记录元数据信息
         logger.info("   📊 会话基本信息:")
