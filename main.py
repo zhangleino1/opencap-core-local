@@ -400,8 +400,8 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
             if upsideDownChecker:
                 rotationAngles = {'y':-90}
                 logging.info("🔄 检测到棋盘格倒置，应用倒置补偿旋转:")
-                logging.info("   X轴旋转: -90°")
-                logging.info("   📝 说明: 将Z轴(垂直向上)正确转换为OpenSim Y轴(垂直向上)")
+                logging.info("   y轴旋转: -90°")
+                logging.info("   📝 说明: opencv y轴垂直向上,x轴超左,z轴超外 转向 x轴超前，z超左和Opensim 坐标轴要求对齐")
             else:
                 rotationAngles = {'y':90, 'z':180}
                 logging.info("🔄 检测到棋盘格正向，应用标准背墙旋转:")
