@@ -2926,6 +2926,94 @@ def writeTRCfrom3DKeypoints(keypoints3D, pathOutputFile, keypointNames,
     
     return None
 
+# %% Debug helper: save sampled 3D points to JSON for quick inspection
+def save3DPointsDebug(keypoints3D, keypointNames, frameRate, outPath,
+                      sample_strategy='auto', max_frames=10, rotationAngles=None):
+    """Dump a compact JSON snapshot of 3D points for debugging.
+
+    Args:
+        keypoints3D: np.ndarray (3, nMarkers, nFrames), units in mm.
+        keypointNames: list of marker names aligned with dimension 1.
+        frameRate: float, Hz.
+        outPath: destination JSON file path.
+        sample_strategy: 'auto'|'first'|'all'|'uniform'.
+        max_frames: max frames to include when sampling.
+        rotationAngles: dict of rotations applied later when writing TRC.
+    Returns:
+        outPath
+    """
+    import os
+    import json
+    import numpy as np
+
+    if keypoints3D is None or keypoints3D.size == 0:
+        data = {
+            'error': 'empty_3d_data',
+            'meta': {'frameRate': frameRate, 'units': 'mm'}
+        }
+        os.makedirs(os.path.dirname(outPath), exist_ok=True)
+        with open(outPath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return outPath
+
+    n_axes, n_markers, n_frames = keypoints3D.shape
+
+    # choose frames to export
+    if sample_strategy == 'all' or (sample_strategy == 'auto' and n_frames <= max_frames):
+        idx_frames = list(range(n_frames))
+    elif sample_strategy in ('first',):
+        idx_frames = [0]
+    else:
+        # auto/uniform: include first, middle, last, plus uniform subsample up to max_frames
+        idx_frames = [0, max(0, n_frames // 2), n_frames - 1]
+        if max_frames > 3 and n_frames > 3:
+            remaining = max_frames - 3
+            # spread remaining indices (avoid duplicates)
+            if remaining > 0:
+                uni = np.linspace(0, n_frames - 1, remaining + 2, dtype=int)[1:-1].tolist()
+                idx_frames.extend(uni)
+        idx_frames = sorted(set([i for i in idx_frames if 0 <= i < n_frames]))
+
+    # compute basic stats across all frames (ignore nans)
+    with np.errstate(all='ignore'):
+        x_all = keypoints3D[0, :, :].flatten()
+        y_all = keypoints3D[1, :, :].flatten()
+        z_all = keypoints3D[2, :, :].flatten()
+        stats = {
+            'x_min': float(np.nanmin(x_all)), 'x_max': float(np.nanmax(x_all)),
+            'y_min': float(np.nanmin(y_all)), 'y_max': float(np.nanmax(y_all)),
+            'z_min': float(np.nanmin(z_all)), 'z_max': float(np.nanmax(z_all)),
+        }
+
+    # build frames payload
+    frames_payload = []
+    for i in idx_frames:
+        frame_pts = {}
+        for m in range(n_markers):
+            xyz = keypoints3D[:, m, i]
+            # convert to list with possible nans turned into None for JSON
+            xyz_list = [None if np.isnan(v) else float(v) for v in xyz.tolist()]
+            frame_pts[keypointNames[m] if m < len(keypointNames) else f'm{m}'] = xyz_list
+        frames_payload.append({'index': int(i), 'markers_mm': frame_pts})
+
+    payload = {
+        'meta': {
+            'frameRate': float(frameRate),
+            'nFrames': int(n_frames),
+            'nMarkers': int(n_markers),
+            'units': 'mm',
+            'rotationAngles_for_TRC': rotationAngles if rotationAngles else {},
+        },
+        'stats_all_frames_mm': stats,
+        'marker_names': keypointNames,
+        'frames': frames_payload,
+    }
+
+    os.makedirs(os.path.dirname(outPath), exist_ok=True)
+    with open(outPath, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    return outPath
+
 # %% Find indices with high confidence that overlap between cameras.
 def findOverlap(confidenceList, markers4VertVel):    
     c_confidenceList = copy.deepcopy(confidenceList)

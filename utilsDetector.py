@@ -150,7 +150,7 @@ def runOpenPoseVideo(cameraDirectory,fileName,pathOpenPose, trialName,
         saveJsonsAsPkl(pathOutputJsons, ppPklPath, trialPrefix)
         
         # Delete jsons
-        shutil.rmtree(pathJsonDir)
+        # shutil.rmtree(pathJsonDir)
         
     return
         

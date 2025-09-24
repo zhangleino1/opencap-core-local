@@ -11,6 +11,7 @@ import os
 import glob
 import numpy as np
 import yaml
+import json
 import traceback
 
 import logging
@@ -398,7 +399,7 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
 
 
             if upsideDownChecker:
-                rotationAngles = {'y':-90}
+                rotationAngles = {'y':90}
                 logging.info("🔄 检测到棋盘格倒置，应用倒置补偿旋转:")
                 logging.info("   y轴旋转: -90°")
                 logging.info("   📝 说明: opencv y轴垂直向上,x轴超左,z轴超外 转向 x轴超前，z超左和Opensim 坐标轴要求对齐")
@@ -429,7 +430,7 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
         logging.info(f"   🔄 最终旋转角度: {rotationAngles}")
         logging.info("   📚 坐标系说明:")
         logging.info("      - 运动捕获坐标系: 基于棋盘格建立的原始坐标系")
-        logging.info("      - OpenSim坐标系: Y轴向上，X轴向前，Z轴向右")
+        logging.info("      - OpenSim坐标系: Y轴向上((positive Y指向垂直向上，重力方向为负Y），X轴向前(positive Y指向垂直向上，重力方向为负Y）)，Z轴向右(positive Z指向受试者的右侧)")
         logging.info("      - 这些角度将用于从运动捕获坐标系转换到OpenSim坐标系")
         logging.info("=" * 80)
 
@@ -528,8 +529,26 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                 calibrationOptions.pop(cam_t)
                 
     if scaleModel and calibrationOptions is not None and alternateExtrinsics is None:
+        logging.info("🧠 正在触发自动外参解选择 autoSelectExtrinsicSolution ...")
+        logging.info(f"   条件: scaleModel={scaleModel}, has calibrationOptions={calibrationOptions is not None}, alternateExtrinsics={alternateExtrinsics}")
         # Automatically select the camera calibration to use
         CamParamDict = autoSelectExtrinsicSolution(sessionDir,keypoints2D,confidence,calibrationOptions)
+        # Report the chosen solutions if the JSON file exists
+        try:
+            calibSelPath = os.path.join(sessionDir, 'Videos', 'calibOptionSelections.json')
+            if os.path.exists(calibSelPath):
+                with open(calibSelPath, 'r', encoding='utf-8') as f:
+                    chosen = json.load(f)
+                logging.info("✅ 自动外参选择完成，选择结果如下(相机: 解索引):")
+                for cam, sol in chosen.items():
+                    logging.info(f"   - {cam}: soln{sol}")
+            else:
+                logging.info("ℹ️ 未找到 calibOptionSelections.json；自动选择已执行，但未写出选择文件。")
+        except Exception as e:
+            logging.warning(f"⚠️ 读取自动选择结果时出错: {str(e)}")
+    else:
+        logging.info("ℹ️ 跳过自动外参解选择：")
+        logging.info(f"   条件: scaleModel={scaleModel}, has calibrationOptions={calibrationOptions is not None}, alternateExtrinsics={alternateExtrinsics}")
      
     if runTriangulation:
         # Triangulate.
@@ -607,6 +626,19 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
                     logging.info(f"      Y轴范围: [{np.min(valid_y):.3f}, {np.max(valid_y):.3f}] mm, 标准差: {np.std(valid_y):.3f}")
                 if len(valid_z) > 0:
                     logging.info(f"      Z轴范围: [{np.min(valid_z):.3f}, {np.max(valid_z):.3f}] mm, 标准差: {np.std(valid_z):.3f}")
+
+                # 快速比例检查：Z 轴范围是否远大于 X/Y（可提示外参或坐标系问题）
+                try:
+                    x_span = float(np.nanmax(valid_x) - np.nanmin(valid_x)) if len(valid_x) else np.nan
+                    y_span = float(np.nanmax(valid_y) - np.nanmin(valid_y)) if len(valid_y) else np.nan
+                    z_span = float(np.nanmax(valid_z) - np.nanmin(valid_z)) if len(valid_z) else np.nan
+                    if np.isfinite(x_span) and np.isfinite(y_span) and np.isfinite(z_span):
+                        xy_span = max(x_span, y_span, 1e-6)
+                        ratio = z_span / xy_span
+                        if ratio > 5:
+                            logging.warning(f"      ⚠️ Z轴范围({z_span:.1f})显著大于XY({xy_span:.1f}), 比例≈{ratio:.1f}，可能存在外参/坐标系问题")
+                except Exception:
+                    pass
 
                 # 计算人体尺度特征
                 if keypoints3D.shape[2] > 0:
@@ -711,6 +743,18 @@ def main(sessionName, trialName, trial_id, cameras_to_use=['all'],
         writeTRCfrom3DKeypoints(keypoints3D, pathOutputFiles[trialName],
                                 keypointNames, frameRate=frameRate,
                                 rotationAngles=rotationAngles)
+
+        # 额外导出调试用3D采样JSON，便于快速人工检查
+        try:
+            from utilsChecker import save3DPointsDebug
+            debug_dir = os.path.join(preAugmentationDir, 'Debug3D')
+            os.makedirs(debug_dir, exist_ok=True)
+            debug_json_path = os.path.join(debug_dir, f"{trial_id}_3d_sample.json")
+            save3DPointsDebug(keypoints3D, keypointNames, frameRate, debug_json_path,
+                              sample_strategy='auto', max_frames=10, rotationAngles=rotationAngles)
+            logging.info(f"   🧪 已导出3D调试JSON: {debug_json_path}")
+        except Exception as e:
+            logging.warning(f"   ⚠️ 导出3D调试JSON失败: {str(e)}")
 
         logging.info("✅ TRC文件写入完成")
         logging.info("   📝 说明: TRC文件包含了经过坐标系转换的3D标记点数据")
