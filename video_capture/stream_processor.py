@@ -130,6 +130,10 @@ class StreamProcessor:
         # 构建ffmpeg命令
         cmd = [
             "ffmpeg",
+            "-rtsp_transport",
+            "tcp",  # 使用TCP传输协议，减少丢包
+            "-use_wallclock_as_timestamps",
+            "1",  # 使用系统时钟作为时间戳，有助于同步
              "-err_detect", 
              "ignore_err",  # 忽略可恢复的错误
             "-i",
