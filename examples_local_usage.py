@@ -142,11 +142,11 @@ def example_simple_usage():
 def example_with_config():
     """使用配置文件"""
     print("🚀 开始配置文件示例...")
-    
+
     config_path = "my_config.yaml"
     create_config_template(config_path)
     print(f"配置文件已创建: {config_path}")
-    
+
     def run_pipeline():
         return run_local_opencap(
             video_dir="./LocalData/Videos",
@@ -154,9 +154,79 @@ def example_with_config():
             static_dir="./LocalData/Static",
             config_file=config_path
         )
-    
+
     try:
         success = monitor_progress(run_pipeline)
+        return success
+    except KeyboardInterrupt:
+        print("\n⚠️  用户中断了处理过程")
+        return False
+    except Exception as e:
+        print(f"❌ 处理出错: {str(e)}")
+        print_all_threads()
+        return False
+
+def example_with_external_calibration():
+    """使用外部标定文件（从OpenCap官网下载）"""
+    print("🚀 开始外部标定文件示例...")
+    print("\n" + "="*60)
+    print("📖 使用场景:")
+    print("   当本地标定结果不理想时，可以使用从OpenCap官网")
+    print("   下载的标定文件来排除标定问题")
+    print("="*60 + "\n")
+
+    config_path = "my_config.yaml"
+
+    # 检查配置文件
+    if not os.path.exists(config_path):
+        print(f"❌ 配置文件不存在: {config_path}")
+        print("请先确保配置文件存在并设置了 use_external_calibration: true")
+        return False
+
+    # 读取配置检查是否启用外部标定
+    import yaml
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+
+    if not config.get('calibration', {}).get('use_external_calibration', False):
+        print("⚠️  配置文件未启用外部标定")
+        print("请在配置文件中设置:")
+        print("  calibration:")
+        print("    use_external_calibration: true")
+        print("    external_calibration_files:")
+        print("      Cam1: '路径/to/cameraIntrinsicsExtrinsics.pickle'")
+        return False
+
+    external_files = config.get('calibration', {}).get('external_calibration_files', {})
+    if not external_files:
+        print("❌ 未配置外部标定文件路径")
+        return False
+
+    print("✅ 已配置外部标定文件:")
+    for cam, path in external_files.items():
+        exists = "✓" if os.path.exists(path) else "✗"
+        print(f"   [{exists}] {cam}: {path}")
+
+    print("\n开始处理...\n")
+
+    def run_pipeline():
+        return run_local_opencap(
+            video_dir="./LocalData/Videos",
+            calibration_dir=None,  # 不需要标定目录，使用外部标定文件
+            static_dir="./LocalData/Static",
+            config_file=config_path
+        )
+
+    try:
+        success = monitor_progress(run_pipeline)
+
+        if success:
+            print("\n✅ 处理成功！")
+            print("\n📊 结果分析建议:")
+            print("   1. 在OpenSim中查看人物姿态")
+            print("   2. 如果姿态正常: 说明本地标定存在问题")
+            print("   3. 如果姿态仍异常: 问题可能在其他处理阶段")
+
         return success
     except KeyboardInterrupt:
         print("\n⚠️  用户中断了处理过程")
@@ -268,16 +338,40 @@ if __name__ == "__main__":
     # 显示坐标系调试指导
     show_coordinate_system_debug_guide()
 
-    print("\n📋 配置文件使用方式:")
-    try:
-        example_with_config()
-    except Exception as e:
-        print(f"配置文件示例失败: {str(e)}")
-        print_all_threads()
+    # 检查是否使用外部标定模式
+    import yaml
+    config_path = "my_config.yaml"
+    use_external = False
+
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = yaml.safe_load(f)
+                use_external = config.get('calibration', {}).get('use_external_calibration', False)
+        except:
+            pass
+
+    if use_external:
+        print("\n🔧 使用外部标定文件模式:")
+        try:
+            example_with_external_calibration()
+        except Exception as e:
+            print(f"外部标定示例失败: {str(e)}")
+            print_all_threads()
+    else:
+        print("\n📋 配置文件使用方式:")
+        try:
+            example_with_config()
+        except Exception as e:
+            print(f"配置文件示例失败: {str(e)}")
+            print_all_threads()
 
     # print("\n🔧 简单使用方式:")
     # example_simple_usage()
 
-    print("✅ 示例运行完成！")
+    print("\n✅ 示例运行完成！")
     print("📖 本地管道提供了完整的OpenCap功能。")
-    print("\n💡 如果遇到坐标系问题，请参考上面的调试指导。")
+    print("\n💡 提示:")
+    print("   - 如果遇到坐标系问题，请参考上面的调试指导")
+    print("   - 如果本地标定效果不好，可以尝试使用外部标定文件")
+    print("   - 详细说明请查看 EXTERNAL_CALIBRATION_GUIDE.md")

@@ -1150,10 +1150,76 @@ class LocalOpenCapPipeline:
             
             logger.info(f"部分结果已保存: {partial_file}")
     
+    def _copy_external_calibration_files(self, camera_names):
+        """
+        复制外部标定文件到会话目录
+
+        Args:
+            camera_names: 摄像头名称列表
+
+        Returns:
+            bool: 是否成功复制所有标定文件
+        """
+        logger.info("="*60)
+        logger.info("📂 使用外部标定文件")
+        logger.info("="*60)
+
+        external_files = self.config.get('calibration', {}).get('external_calibration_files', {})
+
+        if not external_files:
+            logger.error("❌ 配置中未指定外部标定文件")
+            return False
+
+        success_count = 0
+
+        for cam_name in camera_names:
+            if cam_name not in external_files:
+                logger.error(f"❌ {cam_name}: 未指定外部标定文件")
+                continue
+
+            source_file = external_files[cam_name]
+
+            # 检查源文件是否存在
+            if not os.path.exists(source_file):
+                logger.error(f"❌ {cam_name}: 外部标定文件不存在: {source_file}")
+                continue
+
+            # 目标路径
+            cam_dir = os.path.join(self.session_dir, 'Videos', cam_name)
+            os.makedirs(cam_dir, exist_ok=True)
+            target_file = os.path.join(cam_dir, 'cameraIntrinsicsExtrinsics.pickle')
+
+            try:
+                # 复制标定文件
+                shutil.copy2(source_file, target_file)
+
+                # 验证复制
+                if os.path.exists(target_file):
+                    source_size = os.path.getsize(source_file)
+                    target_size = os.path.getsize(target_file)
+                    if source_size == target_size:
+                        logger.info(f"✅ {cam_name}: 已复制外部标定文件")
+                        logger.info(f"   源文件: {source_file}")
+                        logger.info(f"   目标: {target_file}")
+                        logger.info(f"   大小: {target_size} bytes")
+                        success_count += 1
+                    else:
+                        logger.error(f"❌ {cam_name}: 文件大小不匹配")
+                else:
+                    logger.error(f"❌ {cam_name}: 复制后目标文件不存在")
+            except Exception as e:
+                logger.error(f"❌ {cam_name}: 复制失败: {str(e)}")
+
+        logger.info("="*60)
+        logger.info(f"📊 标定文件复制结果: {success_count}/{len(camera_names)} 成功")
+        logger.info("="*60)
+
+        return success_count == len(camera_names)
+
     def process_session(self, video_directory, calibration_directory=None, static_directory=None):
         """
         处理完整会话 - 基于官方逻辑的完整流程
-        
+
         Args:
             video_directory: 运动视频目录
             calibration_directory: 标定视频目录（可选）
@@ -1162,17 +1228,17 @@ class LocalOpenCapPipeline:
         logger.info("="*60)
         logger.info("开始本地OpenCap会话处理")
         logger.info("="*60)
-        
+
         try:
             # 创建会话元数据
             self.create_session_metadata()
-            
+
             # 确定静态目录 - 从配置或参数获取
             if static_directory is None:
                 static_directory = self.config.get('static_videos')
                 if static_directory:
                     logger.info(f"从配置获取静态目录: {static_directory}")
-            
+
             # 获取摄像头列表
             video_patterns = ["*.MOV", "*.mp4", "*.MP4", "*.mov", "*.avi", "*.AVI"]
             video_files = []
@@ -1181,15 +1247,25 @@ class LocalOpenCapPipeline:
 
             if not video_files:
                 raise ValueError(f"未找到视频文件: {video_directory}")
-            
+
             cameras = self._organize_videos_by_camera(video_files)
             camera_names = list(cameras.keys())
-            
+
             logger.info(f"检测到摄像头: {camera_names}")
-            
-            # 1. 处理标定试验（如果提供）
-            calib_trial_name = None
-            if calibration_directory and os.path.exists(calibration_directory):
+
+            # 检查是否使用外部标定文件
+            use_external_calibration = self.config.get('calibration', {}).get('use_external_calibration', False)
+
+            if use_external_calibration:
+                # 使用外部标定文件
+                logger.info("⚙️ 配置为使用外部标定文件，跳过本地标定")
+                calib_success = self._copy_external_calibration_files(camera_names)
+                if not calib_success:
+                    logger.error("❌ 外部标定文件设置失败")
+                    return False
+                logger.info("✅ 外部标定文件已设置")
+            elif calibration_directory and os.path.exists(calibration_directory):
+                # 1. 处理标定试验（如果提供）
                 logger.info("处理标定试验...")
                 calib_trial_name = self.setup_from_videos(
                     videos=calibration_directory,
@@ -1203,6 +1279,8 @@ class LocalOpenCapPipeline:
                         logger.info("✅ 标定试验处理成功")
                     else:
                         logger.warning("⚠️ 标定试验处理失败，但继续处理其他试验")
+            else:
+                logger.warning("⚠️ 未提供标定目录且未配置外部标定文件")
             
             # 2. 处理静态试验（如果提供）
             static_trial_name = None

@@ -1,10 +1,23 @@
 calibration:
+  # 使用外部标定文件（跳过本地标定）
+  # 设置为true时，将使用external_calibration_files中指定的标定文件
+  use_external_calibration: false
+
+  # 外部标定文件路径
+  # 格式: 摄像头名称: 标定文件路径
+  # 示例:
+  #   Cam1: "D:/path/to/Cam1/cameraIntrinsicsExtrinsics.pickle"
+  #   Cam2: "D:/path/to/Cam2/cameraIntrinsicsExtrinsics.pickle"
+  external_calibration_files:
+    # Cam1: ""
+    # Cam2: ""
+
   checkerboard:
     dimensions:
     - 5
     - 4
     square_size: 35
- 
+
 
     # 棋盘格放置方式 - 非常重要，直接影响坐标系转换！
     # 选项:
@@ -45,7 +58,7 @@ processing:
   filter_frequency: default
   framerate: 30
   image_upsample_factor: 4
-  pose_detector: OpenPose
+  pose_detector: mmpose
   resolution: 1x736
   scaling_setup: upright_standing_pose
 session:

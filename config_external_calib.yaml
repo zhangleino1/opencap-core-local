@@ -1,34 +1,40 @@
+# 使用外部标定文件的配置示例
+# 此配置跳过本地标定，直接使用从OpenCap官网下载的标定文件
+
 calibration:
-  # 使用外部标定文件 - 从OpenCap官网下载
+  # 启用外部标定文件
   use_external_calibration: true
 
-  # 指定外部标定文件路径
-  # 请根据实际下载的文件路径修改
+  # 指定每个摄像头的外部标定文件路径
+  # 请根据实际情况修改路径
   external_calibration_files:
     Cam1: "D:/work/researchcode/opencap-core-local/Data/OpenCapData_a285e8cf-f14b-403d-969f-3be4f50a8161_6ab4593e-38a4-4eb1-8f45-76e9a5c6b0a9/OpenCapData_a285e8cf-f14b-403d-969f-3be4f50a8161/Videos/Cam1/cameraIntrinsicsExtrinsics.pickle"
-    # 如果有多个摄像头,继续添加
     # Cam2: "路径/to/Cam2/cameraIntrinsicsExtrinsics.pickle"
+    # Cam3: "路径/to/Cam3/cameraIntrinsicsExtrinsics.pickle"
 
   checkerboard:
     dimensions:
     - 5
     - 4
-    placement: backWall
     square_size: 35
+    placement: backWall
+
   deployed_folders:
   - Deployed_720_60fps
   - Deployed
-  extrinsic_solutions: null
-  interactive_selection: false  # 使用外部标定时不需要交互式选择
   n_images: 50
+  interactive_selection: false
+
 directories:
   calibration_videos: ./LocalData/Calibration
   input_videos: ./LocalData/Videos
   output: ./LocalData/Results
+
 output:
   delete_intermediate: false
   generate_opensim: true
   save_videos: true
+
 processing:
   augmenter_model: v0.3
   bbox_threshold: 0.8
@@ -38,8 +44,9 @@ processing:
   pose_detector: mmpose
   resolution: 1x736
   scaling_setup: upright_standing_pose
+
 session:
-  description: 本地OpenCap会话
-  name: session_20250930_154216
+  description: 使用外部标定文件的OpenCap会话
+  name: session_external_calib
   subject_height: 170.0
   subject_mass: 67.0
