@@ -38,7 +38,7 @@ processing:
   augmenter_model: v0.3
   bbox_threshold: 0.8
   filter_frequency: default
-  framerate: 30
+  framerate: 60
   image_upsample_factor: 4
   pose_detector: mmpose
   resolution: 1x736
