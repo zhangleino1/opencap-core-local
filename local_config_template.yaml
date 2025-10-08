@@ -45,7 +45,7 @@ processing:
   filter_frequency: default
   framerate: 30
   image_upsample_factor: 4
-  pose_detector: OpenPose
+  pose_detector: mmpose
   resolution: 1x736
   scaling_setup: upright_standing_pose
 session:
