@@ -1,80 +1,105 @@
 # GEMINI.md: Project Overview and Guide
 
-## Project Overview
+## Overview
+OpenCap Core is a computer vision and biomechanics pipeline that processes multi-camera videos to estimate 3D human movement kinematics. The system integrates pose detection, camera calibration, 3D triangulation, marker augmentation via LSTM models, and OpenSim biomechanical analysis.
 
-This project, **OpenCap Core**, is a comprehensive Python-based system for estimating 3D human movement dynamics from standard 2D video. It uses computer vision and biomechanical modeling to produce kinematic data compatible with OpenSim.
+## Architecture & Data Flow
 
-The core functionality involves:
-1.  **Camera Calibration:** Determining camera intrinsic and extrinsic parameters.
-2.  **2D Pose Estimation:** Using either **OpenPose** or **MMPose** to detect keypoints on the human body in videos.
-3.  **3D Reconstruction:** Triangulating 2D keypoints from multiple camera views into 3D marker positions.
-4.  **Marker Augmentation:** Using an LSTM model to estimate a full-body marker set from the detected keypoints.
-5.  **OpenSim Integration:** Scaling a generic musculoskeletal model and running Inverse Kinematics to compute joint angles.
+### Pipeline Stages (Sequential)
+1. **Camera Calibration** (`utilsChecker.py`) - Checkerboard detection → intrinsic/extrinsic parameters
+2. **Pose Detection** (`utilsDetector.py`) - 2D keypoints via OpenPose/MMPose  
+3. **3D Reconstruction** (`utilsChecker.py`) - Synchronized multi-view triangulation
+4. **Marker Augmentation** (`utilsAugmenter.py`) - LSTM expansion to full marker set
+5. **Biomechanical Analysis** (`utilsOpenSim.py`) - Model scaling and inverse kinematics
 
-The repository supports two main workflows:
-- A **cloud-integrated workflow** that interacts with the `app.opencap.ai` web service.
-- A **fully offline local pipeline** (`local_opencap_pipeline.py`) designed for ease of use without any external API or internet dependency. This appears to be the focus of recent development.
+### Entry Points by Use Case
+- **Cloud Processing**: `app.py` (Docker worker) + `utilsServer.py`
+- **Local Processing**: `main.py` (core pipeline) or `local_opencap_pipeline.py` (offline wrapper)
+- **Camera Calibration Only**: `main_calcIntrinsics.py` or `main_calcIntrinsics_local.py`
 
-**Key Technologies:**
-- **Language:** Python
-- **Core Libraries:** TensorFlow, OpenCV, OpenSim, Scipy, Pandas
-- **Pose Estimation:** OpenPose, MMPose
-- **Containerization:** Docker, Docker Compose
-- **GPU Acceleration:** NVIDIA CUDA
-
-## Building and Running
-
-There are two primary methods for running the project: using a local Conda environment or using Docker.
-
-### 1. Local Conda Environment
-
-This method is detailed in `README.md` and requires manual setup of the environment and dependencies.
-
-**Setup:**
-1.  Create an Anaconda environment: `conda create -n opencap python=3.9 pip spyder`
-2.  Activate the environment: `conda activate opencap`
-3.  Install OpenSim: `conda install -c opensim-org opensim=4.4=py39np120`
-4.  Install CUDA/cuDNN: `conda install -c conda-forge cudatoolkit=11.2 cudnn=8.1.0`
-5.  Install Python packages: `python -m pip install -r requirements.txt`
-6.  Manually download and place OpenPose and ffmpeg binaries in `C:\`.
-
-**Running the Offline Pipeline:**
-The `local_opencap_pipeline.py` script is the main entry point for the offline workflow.
-
-```bash
-# Create a configuration file from the template
-python local_opencap_pipeline.py --create-config my_config.yaml
-
-# Run the full pipeline with your videos
-# - video_dir contains your motion videos (e.g., walking, running)
-# - calibration_dir contains videos of a checkerboard for calibration
-python local_opencap_pipeline.py <path_to_video_dir> --calibration-dir <path_to_calibration_dir> --config my_config.yaml
+### Critical Configuration Pattern
+```python
+# Environment-based mode switching (set before imports)
+os.environ['OPENCAP_LOCAL_MODE'] = 'true'  # Skip API authentication
+os.environ['PYTHONIOENCODING'] = 'utf-8'   # Windows encoding fix
 ```
 
-### 2. Docker Environment
+## Key Coding Patterns
 
-The `docker` directory contains the setup for a containerized environment using Docker Compose. This is a more isolated and reproducible way to run the pipeline.
-
-**Setup:**
-- Ensure you have Docker, Docker Compose, and the NVIDIA Container Toolkit installed.
-- Environment variables for image names and GPU settings are expected (likely in a `.env` file).
-
-**Running:**
-The `docker` directory contains shell scripts to manage the containers.
-
-```bash
-# Start all service containers (mobilecap, openpose, mmpose)
-# (Assuming start-containers.sh exists and is configured)
-bash docker/start-containers.sh
-
-# Stop all containers
-bash docker/stop-all-containers.sh
+### Trial Type Handling
+```python
+# main.py uses extrinsicsTrial flag to control processing stages
+if extrinsicsTrial:
+    runPoseDetection = False  # Calibration only
+    runOpenSimPipeline = False
+elif trial_type == 'static':
+    scaleModel = True  # Generate scaled OpenSim model
+else:  # dynamic
+    scaleModel = False  # Use existing scaled model
 ```
 
-## Development Conventions
+### Data Organization (Critical Structure)
+```
+Data/SessionName/
+├── Videos/CameraName/InputMedia/TrialName/trial_id.mp4
+├── MarkerData[_variant]/[Pre|Post]Augmentation/
+├── OpenSimData/Model/*_scaled.osim
+└── sessionMetadata.yaml
+```
+````instructions
+# OpenCap Core — AI Coding Guide
 
-*   **Configuration:** Project and pipeline settings are managed via YAML files. A template is provided in `local_config_template.yaml`.
-*   **Modularity:** The code is organized into `main` scripts for orchestration and numerous `utils` modules for specific tasks (e.g., `utilsChecker` for calibration, `utilsDetector` for pose estimation).
-*   **Offline-First:** The `local_opencap_pipeline.py` represents a shift towards a fully self-contained, offline-first design, reducing reliance on external APIs. It is implemented as a class (`LocalOpenCapPipeline`) that encapsulates the entire process.
-*   **Encoding:** There is an active effort to standardize all file I/O to use `encoding='utf-8'` to prevent issues on different operating systems.
-*   **Error Handling:** Exception handling includes `logging.error(..., exc_info=True)` to provide full stack traces for easier debugging.
+Purpose: Enable AI agents to work productively in this Python CV+biomech pipeline by codifying project-specific patterns, entry points, data layout, and workflows.
+
+## Architecture & Flow
+- Stages: calibration → 2D pose → sync/triangulate → augment → OpenSim.
+- Entry points:
+    - `main.py`: orchestrates end-to-end local/cloud-aware runs.
+    - `local_opencap_pipeline.py`: fully offline wrapper and examples.
+    - `app.py` + `utilsServer.py`: cloud worker orchestration.
+    - Intrinsics-only: `main_calcIntrinsics.py` (+ `_local.py`).
+- Major modules:
+    - `utilsChecker.py`: calibration (intrinsics/extrinsics), sync, triangulation, pkl/video I/O.
+    - `utilsDetector.py`/`utilsMMpose.py`: OpenPose/MMPose abstraction and settings.
+    - `utilsAugmenter.py`: LSTM marker augmentation (models in `MarkerAugmenter/LSTM/v0.*`).
+    - `utilsOpenSim.py`: scaling (neutral), IK (dynamic), visualizer JSON.
+    - `utils.py`: API helpers, session I/O, TRC writers (`numpy2TRC`), downloads.
+
+## Data & Conventions
+- Session tree (critical): `Data/<Session>/Videos/CamX/InputMedia/<Trial>/<trial_id>.<ext>`; results in `MarkerData/`, `OpenSimData/`, `sessionMetadata.yaml`.
+- File types: videos `.mp4/.avi`; pose `.pkl` per cam; 3D markers `.trc` (meters); camera params `.pickle`.
+- Trial types: `calibration` (extrinsics), `neutral` (scale model), others dynamic (IK only).
+- Pose detector switch: `poseDetector = 'OpenPose' | 'mmpose'`; OpenPose resolution via `resolutionPoseDetection`.
+
+## Calibration & Triangulation
+- Extrinsics ambiguity: two PnP solutions per cam are saved; selection can be automatic (reprojection) or manual. See images `extrinsicCalib_*.jpg` and pickles `cameraIntrinsicsExtrinsics_soln*.pickle` under each `CamX/InputMedia/calibration/`.
+- Upside-down checker handling (back wall): `main.py` sets rotation angles for TRC export.
+    - Upright: `{'y': 90, 'z': 180}`.
+    - Upside-down: `{'y': -90, 'z': 180}`.
+- Triangulation: `utilsChecker.triangulateMultiviewVideo(...)` with per-cam confidence weighting and sync refinement.
+
+## TRC Writing & Coordinates
+- Writer: `writeTRCfrom3DKeypoints` is invoked from `main.py` and uses rotation angles above to map board coordinates to OpenSim (Y-up). Raw TRC formatting helper is `utils.numpy2TRC`.
+- Units: meters. Markers follow OpenPose naming (subset or augmented set post-LSTM).
+- Optional local-mode behavior: set `OPENCAP_LOCAL_MODE='true'` to bypass API calls. Some environments use `PYTHONIOENCODING='utf-8'` on Windows.
+
+## Workflows (Windows, conda)
+- Environment:
+    - OpenSim 4.4 (conda), TensorFlow GPU, OpenCV; external tools in PATH: `C:\openpose\bin`, `C:\ffmpeg\bin`.
+- Quick run:
+    - `python examples_local_usage.py` or `python local_opencap_pipeline.py <videos> --calibration-dir <calib>`.
+- Tests:
+    - `pytest tests/` (e.g., `tests/test_api.py`, `tests/test_read_camera_intrinsics.py`).
+    - Utilities in `tests/checkerboard_test.py` for chessboard sizing sanity checks.
+
+## Implementation Patterns (do like this)
+- Trial gating in `main.py` controls stages: calibration-only vs neutral (scale) vs dynamic (IK).
+- Rotation logging and angles are determined from `sessionMetadata['checkerBoard']['placement']` and `isCheckerboardUpsideDown(...)`.
+- When editing calibration logic, preserve dual-solution artifacts and image outputs—other scripts use them for selection.
+- Keep data layout invariant; many utilities assume exact folder/file patterns.
+
+## Pointers for Agents
+- Before changing pose detector or resolutions, ensure GPU memory fits; OpenPose paths come from `utils.getOpenPoseDirectory()`.
+- For coordinate issues, inspect TRC head and rotation angles in `main.py` logs; expect Y to be dominant post-rotation.
+- Cloud mode paths and API posting live in `utils.py` (`postFileToTrial`, `getCalibration*`, `postCalibration*`). Use `OPENCAP_LOCAL_MODE` to avoid server calls during local dev.
+````

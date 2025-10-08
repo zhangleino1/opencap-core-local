@@ -1,4 +1,5 @@
 import cv2
+import os
 import pickle
 import torch
 
@@ -19,16 +20,24 @@ from mmpose.datasets import DatasetInfo
 
 # %%
 def get_dataset_info():
-    
-    import configs._base_.datasets.coco as coco
-    import configs._base_.datasets.coco_wholebody as coco_wholebody
-    
-    dataset_info = {
-        "TopDownCocoDataset": coco.dataset_info,
-        "TopDownCocoWholeBodyDataset": coco_wholebody.dataset_info
-    }
-    
-    return dataset_info
+    """Get dataset information for COCO wholebody dataset from MMPose configs"""
+    import sys
+    import mmpose
+
+    # Add MMPose configs path to sys.path to import dataset info
+    mmpose_path = os.path.dirname(mmpose.__file__)
+    configs_path = os.path.join(mmpose_path, '.mim', 'configs', '_base_', 'datasets')
+    sys.path.insert(0, configs_path)
+
+    try:
+        # Import the official COCO wholebody dataset info from MMPose
+        import coco_wholebody
+        dataset_info = coco_wholebody.dataset_info
+    finally:
+        # Clean up sys.path
+        sys.path.remove(configs_path)
+
+    return {"TopDownCocoWholeBodyDataset": dataset_info}
 
 # %%
 def detection_inference(model_config, model_ckpt, video_path, bbox_path,
@@ -68,14 +77,14 @@ def pose_inference(model_config, model_ckpt, video_path, bbox_path, pkl_path,
 
     # init model
     model = init_pose_model(model_config, model_ckpt, device)
-    model_name = model_config.split("/")[1].split(".")[0]
+    model_name = os.path.basename(model_config).split(".")[0]
     print("Initializing {} Model".format(model_name))
 
     # build data pipeline
     test_pipeline = init_test_pipeline(model)
 
     # build dataset
-    video_basename = video_path.split("/")[-1].split(".")[0]
+    video_basename = os.path.splitext(os.path.basename(video_path))[0]
     dataset = CustomVideoDataset(video_path=video_path,
                                  bbox_path=bbox_path,
                                  bbox_threshold=bbox_thr,

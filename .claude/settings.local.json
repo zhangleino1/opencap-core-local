@@ -3,7 +3,9 @@
     "allow": [
       "Bash(python:*)",
       "Bash(dir:*)",
-      "Bash(sed:*)"
+      "Bash(sed:*)",
+      "Bash(ffprobe:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

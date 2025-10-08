@@ -84,12 +84,14 @@ def getOpenPoseDirectory(isDocker=False):
 
 def getMMposeDirectory(isDocker=False):
     computername = socket.gethostname()
-    
+
     # Paths to OpenPose folder for local testing.
     if computername == "clarkadmin-MS-7996":
         mmposeDirectory = "/home/clarkadmin/Documents/MyRepositories/MoVi_analysis/model_ckpts"
     else:
-        mmposeDirectory = ''
+        # Default to mmpose subdirectory in the current working directory
+        import os
+        mmposeDirectory = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'mmpose')
     return mmposeDirectory
 
 def loadCameraParameters(filename):
