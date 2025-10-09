@@ -262,38 +262,70 @@ def calibrateCameraFromVideo(video_file, CheckerBoardParams, nImages):
         return None
     
     print(f"  找到 {valid_images} 幅有效标定图像")
-    
-    # 标定摄像头
+
+    # 🔧 FIX: 根据视频旋转角度调整标定尺寸
+    # 关键问题: cv2.VideoCapture返回的是文件存储尺寸，但标定图像是旋转后的尺寸
+    # 需要检测旋转角度并相应调整
+    from utilsChecker import getVideoRotation
+    rotation = getVideoRotation(video_file)
+
+    print(f"  检测到视频旋转角度: {rotation}°")
+
+    if rotation == 90 or rotation == 270:
+        # 竖屏: 文件存储为横向(1920x1080)，但实际显示为竖向(1080x1920)
+        # 标定图像是旋转后的尺寸，所以需要交换width/height
+        calib_width = height   # 实际显示宽度 = 文件高度
+        calib_height = width   # 实际显示高度 = 文件宽度
+        print(f"  竖屏模式: 标定使用尺寸 {calib_width}x{calib_height}")
+    else:
+        # 横屏或无旋转: 使用文件存储尺寸
+        calib_width = width
+        calib_height = height
+        print(f"  横屏模式: 标定使用尺寸 {calib_width}x{calib_height}")
+
+    # 标定摄像头 - 使用正确的显示尺寸
     ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-        objpoints, imgpoints, (width, height), None, None
+        objpoints, imgpoints, (calib_width, calib_height), None, None
     )
-    
+
     if not ret:
         print("  标定计算失败")
         return None
-    
+
     # 计算重投影误差
     total_error = 0
     for i in range(len(objpoints)):
         imgpoints2, _ = cv2.projectPoints(objpoints[i], rvecs[i], tvecs[i], mtx, dist)
         error = cv2.norm(imgpoints[i], imgpoints2, cv2.NORM_L2) / len(imgpoints2)
         total_error += error
-    
+
     reprojection_error = total_error / len(objpoints)
-    
+
     print(f"  重投影误差: {reprojection_error:.2f} 像素")
-    
+
+    # 验证焦距比例
+    fx = mtx[0, 0]
+    fy = mtx[1, 1]
+    fx_fy_ratio = fx / fy
+    print(f"  焦距: fx={fx:.2f}, fy={fy:.2f}, fx/fy={fx_fy_ratio:.4f}")
+
+    if fx_fy_ratio > 1.5 or fx_fy_ratio < 0.66:
+        print(f"  ⚠️ 警告: fx/fy比例异常({fx_fy_ratio:.4f})，可能存在问题")
+        print(f"     正常情况下应该接近1.0")
+
     # 构造返回数据
+    # ✅ imageSize存储为OpenCV的shape格式: [height, width]
     intrinsic_data = {
         'intrinsicMat': mtx,
         'distortion': dist,
-        'imageSize': np.array([[width], [height]], dtype=np.float64),
+        'imageSize': np.array([[calib_height], [calib_width]], dtype=np.float64),
         'reprojectionError': reprojection_error,
         'valid_images': valid_images,
         'rvecs': rvecs,
-        'tvecs': tvecs
+        'tvecs': tvecs,
+        'rotation': rotation  # 记录旋转角度用于调试
     }
-    
+
     return intrinsic_data
 
 def computeAverageParameters(CamParamList):
